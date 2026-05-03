@@ -28,6 +28,11 @@ class RequestStatusUpdate(BaseModel):
     status: RequestStatus
 
 
+class ClearAllResponse(BaseModel):
+    cleared_count: int
+    request_ids: list[int]
+
+
 class RequestOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

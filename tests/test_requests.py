@@ -142,6 +142,30 @@ def test_manager_only_sees_own_requests(client, manager_token):
     assert "Theirs" not in names
 
 
+def test_buyer_can_bulk_clear_pending_requests(client, manager_token, buyer_token):
+    for name in ("Item A", "Item B", "Item C"):
+        client.post(
+            "/requests",
+            json={"custom_product_name": name, "quantity": 1},
+            headers=auth_headers(manager_token),
+        )
+
+    r = client.post("/requests/clear-all", headers=auth_headers(buyer_token))
+    assert r.status_code == 200
+    body = r.json()
+    assert body["cleared_count"] == 3
+    assert len(body["request_ids"]) == 3
+
+    # Verify all requests are now DONE
+    listing = client.get("/requests", headers=auth_headers(buyer_token)).json()
+    assert all(req["status"] == "done" for req in listing)
+
+
+def test_manager_cannot_bulk_clear(client, manager_token):
+    r = client.post("/requests/clear-all", headers=auth_headers(manager_token))
+    assert r.status_code == 403
+
+
 def test_unauthenticated_request_rejected(client):
     r = client.get("/requests")
     assert r.status_code == 401

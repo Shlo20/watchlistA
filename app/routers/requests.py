@@ -7,7 +7,7 @@ from app.core.deps import get_current_user, require_role
 from app.models.product import Product
 from app.models.request import Request, RequestHistory, RequestStatus
 from app.models.user import User, UserRole
-from app.schemas.request import RequestCreate, RequestOut, RequestStatusUpdate
+from app.schemas.request import ClearAllResponse, RequestCreate, RequestOut, RequestStatusUpdate
 from app.services import notifications
 
 
@@ -71,6 +71,32 @@ def list_requests(
     if status_filter:
         q = q.filter(Request.status == status_filter)
     return q.order_by(Request.created_at.desc()).all()
+
+
+@router.post("/clear-all", response_model=ClearAllResponse)
+def clear_all_pending(
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(UserRole.BUYER)),
+):
+    """Buyer marks every pending request as done in one shot ('Got everything' button)."""
+    pending = db.query(Request).filter(Request.status == RequestStatus.PENDING).all()
+
+    for req in pending:
+        req.status = RequestStatus.DONE
+        db.add(RequestHistory(
+            request_id=req.id,
+            status=RequestStatus.DONE,
+            changed_by=user.id,
+        ))
+
+    db.commit()
+
+    cleared_ids = [req.id for req in pending]
+    for rid in cleared_ids:
+        background.add_task(notifications.notify_requester_status_change, rid)
+
+    return {"cleared_count": len(cleared_ids), "request_ids": cleared_ids}
 
 
 @router.get("/{request_id}", response_model=RequestOut)
