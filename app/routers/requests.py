@@ -7,7 +7,7 @@ from app.core.deps import get_current_user, require_role
 from app.models.product import Product
 from app.models.request import Request, RequestHistory, RequestStatus
 from app.models.user import User, UserRole
-from app.schemas.request import ArchiveStaleResponse, ClearAllResponse, RequestCreate, RequestOut, RequestStatusUpdate
+from app.schemas.request import ArchiveStaleResponse, ClearAllResponse, DigestResponse, RequestCreate, RequestOut, RequestStatusUpdate
 from app.services import notifications
 from app.services.archive import archive_stale_pending_requests
 
@@ -25,11 +25,10 @@ VALID_TRANSITIONS = {
 @router.post("", response_model=RequestOut, status_code=status.HTTP_201_CREATED)
 def create_request(
     payload: RequestCreate,
-    background: BackgroundTasks,
     db: Session = Depends(get_db),
     user: User = Depends(require_role(UserRole.MANAGER)),
 ):
-    """Manager creates a restock request. Buyers get an SMS."""
+    """Manager creates a restock request. Buyers receive a daily digest instead of per-item pings."""
     # Validate the product exists if a catalog id was supplied.
     if payload.product_id is not None:
         product = db.query(Product).filter(Product.id == payload.product_id).first()
@@ -53,9 +52,6 @@ def create_request(
     ))
     db.commit()
     db.refresh(req)
-
-    # Notify all buyers in the background so the API response is fast.
-    background.add_task(notifications.notify_buyers_new_request, req.id)
     return req
 
 
@@ -98,6 +94,16 @@ def clear_all_pending(
         background.add_task(notifications.notify_requester_status_change, rid)
 
     return {"cleared_count": len(cleared_ids), "request_ids": cleared_ids}
+
+
+@router.post("/send-digest", response_model=DigestResponse)
+def send_digest(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(UserRole.BUYER)),
+):
+    """Manually trigger the daily digest SMS to all buyers."""
+    count = notifications.send_daily_digest(db)
+    return {"items_in_digest": count}
 
 
 @router.post("/archive-stale", response_model=ArchiveStaleResponse)

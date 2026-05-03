@@ -28,6 +28,10 @@ class RequestStatusUpdate(BaseModel):
     status: RequestStatus
 
 
+class DigestResponse(BaseModel):
+    items_in_digest: int
+
+
 class ArchiveStaleResponse(BaseModel):
     archived_count: int
 

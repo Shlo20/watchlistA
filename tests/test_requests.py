@@ -166,6 +166,34 @@ def test_manager_cannot_bulk_clear(client, manager_token):
     assert r.status_code == 403
 
 
+def test_send_digest_returns_count_of_pending_items(client, manager_token, buyer_token):
+    for name in ("Item A", "Item B", "Item C"):
+        client.post("/requests", json={"custom_product_name": name, "quantity": 1},
+                    headers=auth_headers(manager_token))
+
+    r = client.post("/requests/send-digest", headers=auth_headers(buyer_token))
+    assert r.status_code == 200
+    assert r.json()["items_in_digest"] == 3
+
+
+def test_send_digest_with_no_pending_returns_zero(client, buyer_token):
+    r = client.post("/requests/send-digest", headers=auth_headers(buyer_token))
+    assert r.status_code == 200
+    assert r.json()["items_in_digest"] == 0
+
+
+def test_create_request_no_longer_triggers_per_item_notification(client, manager_token):
+    from unittest.mock import MagicMock, patch
+    from app.services import notifications
+
+    mock_fn = MagicMock()
+    with patch.object(notifications, "notify_buyers_new_request", mock_fn):
+        r = client.post("/requests", json={"custom_product_name": "Thing", "quantity": 1},
+                        headers=auth_headers(manager_token))
+        assert r.status_code == 201
+    mock_fn.assert_not_called()
+
+
 def test_archive_stale_marks_old_pending_as_done(client, db_session, manager_token, buyer_token):
     from datetime import datetime, timedelta, timezone
     from app.models.request import Request

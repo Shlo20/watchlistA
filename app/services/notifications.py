@@ -5,13 +5,14 @@ recipient's phone shows it as a text. Swap this module for Twilio later by
 re-implementing the two `notify_*` functions.
 """
 import logging
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.product import Product
-from app.models.request import Request
+from app.models.request import Request, RequestStatus
 from app.models.user import User, UserRole
 
 
@@ -91,6 +92,56 @@ def notify_buyers_new_request(request_id: int) -> None:
                 _send_sms_via_email(addr, body)
     finally:
         db.close()
+
+
+def send_daily_digest(db=None) -> int:
+    """Send one SMS to every buyer listing all pending requests from the last 24 hours.
+
+    Accepts an optional db session so it can be called from an endpoint that
+    already has an injected (test-overrideable) session. When called with no
+    arguments (e.g. from a scheduler), it opens and closes its own session.
+
+    Returns the number of items in the digest (0 if nothing was sent).
+    """
+    _owned = db is None
+    if _owned:
+        db = SessionLocal()
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        pending = (
+            db.query(Request)
+            .filter(Request.status == RequestStatus.PENDING, Request.created_at >= cutoff)
+            .order_by(Request.created_at.asc())
+            .all()
+        )
+        if not pending:
+            return 0
+
+        lines = []
+        for req in pending:
+            if req.product:
+                label = req.product.name
+            else:
+                label = f"Custom item: {req.custom_product_name or 'Unknown'}"
+            lines.append(f"- {req.quantity}x {label}")
+
+        count = len(lines)
+        body = (
+            f"Today's restock list ({count} item{'s' if count != 1 else ''}):\n"
+            + "\n".join(lines)
+            + "\nReply 'done' when handled or open the app."
+        )
+
+        buyers = db.query(User).filter(User.role == UserRole.BUYER).all()
+        for buyer in buyers:
+            addr = _gateway_address(buyer.phone, buyer.carrier)
+            if addr:
+                _send_sms_via_email(addr, body)
+
+        return count
+    finally:
+        if _owned:
+            db.close()
 
 
 def notify_requester_status_change(request_id: int) -> None:
