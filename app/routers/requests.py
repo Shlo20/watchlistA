@@ -7,8 +7,9 @@ from app.core.deps import get_current_user, require_role
 from app.models.product import Product
 from app.models.request import Request, RequestHistory, RequestStatus
 from app.models.user import User, UserRole
-from app.schemas.request import ClearAllResponse, RequestCreate, RequestOut, RequestStatusUpdate
+from app.schemas.request import ArchiveStaleResponse, ClearAllResponse, RequestCreate, RequestOut, RequestStatusUpdate
 from app.services import notifications
+from app.services.archive import archive_stale_pending_requests
 
 
 router = APIRouter(prefix="/requests", tags=["requests"])
@@ -97,6 +98,17 @@ def clear_all_pending(
         background.add_task(notifications.notify_requester_status_change, rid)
 
     return {"cleared_count": len(cleared_ids), "request_ids": cleared_ids}
+
+
+@router.post("/archive-stale", response_model=ArchiveStaleResponse)
+def archive_stale(
+    hours: int = Query(default=48, ge=1, le=720),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(UserRole.BUYER)),
+):
+    """Mark all pending requests older than `hours` as DONE (system auto-archive)."""
+    count = archive_stale_pending_requests(db, max_age_hours=hours)
+    return {"archived_count": count}
 
 
 @router.get("/{request_id}", response_model=RequestOut)

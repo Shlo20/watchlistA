@@ -28,6 +28,10 @@ class RequestStatusUpdate(BaseModel):
     status: RequestStatus
 
 
+class ArchiveStaleResponse(BaseModel):
+    archived_count: int
+
+
 class ClearAllResponse(BaseModel):
     cleared_count: int
     request_ids: list[int]

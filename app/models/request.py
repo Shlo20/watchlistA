@@ -51,7 +51,7 @@ class RequestHistory(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     request_id: Mapped[int] = mapped_column(ForeignKey("requests.id"), nullable=False)
     status: Mapped[RequestStatus] = mapped_column(Enum(RequestStatus), nullable=False)
-    changed_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    changed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)  # None = system action
     changed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

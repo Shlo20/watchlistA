@@ -166,6 +166,39 @@ def test_manager_cannot_bulk_clear(client, manager_token):
     assert r.status_code == 403
 
 
+def test_archive_stale_marks_old_pending_as_done(client, db_session, manager_token, buyer_token):
+    from datetime import datetime, timedelta, timezone
+    from app.models.request import Request
+
+    r1 = client.post("/requests", json={"custom_product_name": "Old Item", "quantity": 1},
+                     headers=auth_headers(manager_token))
+    r2 = client.post("/requests", json={"custom_product_name": "New Item", "quantity": 1},
+                     headers=auth_headers(manager_token))
+    old_id = r1.json()["id"]
+    new_id = r2.json()["id"]
+
+    # Backdate the first request to 49 hours ago so it falls past the 48-hour cutoff
+    session, _ = db_session
+    req = session.query(Request).filter(Request.id == old_id).first()
+    req.created_at = datetime.now(timezone.utc) - timedelta(hours=49)
+    session.commit()
+
+    r = client.post("/requests/archive-stale", headers=auth_headers(buyer_token))
+    assert r.status_code == 200
+    assert r.json()["archived_count"] == 1
+
+    # Verify statuses via the list endpoint (buyers see all)
+    listing = {req["id"]: req["status"] for req in
+               client.get("/requests", headers=auth_headers(buyer_token)).json()}
+    assert listing[old_id] == "done"
+    assert listing[new_id] == "pending"
+
+
+def test_archive_stale_requires_buyer(client, manager_token):
+    r = client.post("/requests/archive-stale", headers=auth_headers(manager_token))
+    assert r.status_code == 403
+
+
 def test_unauthenticated_request_rejected(client):
     r = client.get("/requests")
     assert r.status_code == 401
