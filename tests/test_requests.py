@@ -19,14 +19,13 @@ def test_manager_creates_request_with_catalog_product(client, manager_token, buy
     pid = _create_product(client, buyer_token)
     r = client.post(
         "/requests",
-        json={"product_id": pid, "quantity": 5, "urgency": "urgent"},
+        json={"product_id": pid, "quantity": 5},
         headers=auth_headers(manager_token),
     )
     assert r.status_code == 201
     body = r.json()
     assert body["status"] == "pending"
     assert body["quantity"] == 5
-    assert body["urgency"] == "urgent"
 
 
 def test_manager_creates_request_with_custom_name(client, manager_token):
@@ -85,7 +84,7 @@ def test_buyer_cannot_create_request(client, buyer_token):
     assert r.status_code == 403
 
 
-def test_status_transition_pending_to_ordered(client, manager_token, buyer_token):
+def test_status_transition_pending_to_done(client, manager_token, buyer_token):
     r = client.post(
         "/requests",
         json={"custom_product_name": "X", "quantity": 1},
@@ -94,27 +93,11 @@ def test_status_transition_pending_to_ordered(client, manager_token, buyer_token
     rid = r.json()["id"]
     r = client.patch(
         f"/requests/{rid}/status",
-        json={"status": "ordered"},
+        json={"status": "done"},
         headers=auth_headers(buyer_token),
     )
     assert r.status_code == 200
-    assert r.json()["status"] == "ordered"
-
-
-def test_status_transition_invalid_jump_rejected(client, manager_token, buyer_token):
-    """Cannot go straight from pending to fulfilled, must go through ordered."""
-    r = client.post(
-        "/requests",
-        json={"custom_product_name": "X", "quantity": 1},
-        headers=auth_headers(manager_token),
-    )
-    rid = r.json()["id"]
-    r = client.patch(
-        f"/requests/{rid}/status",
-        json={"status": "fulfilled"},
-        headers=auth_headers(buyer_token),
-    )
-    assert r.status_code == 400
+    assert r.json()["status"] == "done"
 
 
 def test_cannot_transition_from_terminal_status(client, manager_token, buyer_token):
@@ -124,11 +107,10 @@ def test_cannot_transition_from_terminal_status(client, manager_token, buyer_tok
         headers=auth_headers(manager_token),
     )
     rid = r.json()["id"]
-    client.patch(f"/requests/{rid}/status", json={"status": "ordered"}, headers=auth_headers(buyer_token))
-    client.patch(f"/requests/{rid}/status", json={"status": "fulfilled"}, headers=auth_headers(buyer_token))
+    client.patch(f"/requests/{rid}/status", json={"status": "done"}, headers=auth_headers(buyer_token))
     r = client.patch(
         f"/requests/{rid}/status",
-        json={"status": "ordered"},
+        json={"status": "done"},
         headers=auth_headers(buyer_token),
     )
     assert r.status_code == 400

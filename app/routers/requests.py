@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_role
 from app.models.product import Product
-from app.models.request import Request, RequestHistory, RequestStatus, Urgency
+from app.models.request import Request, RequestHistory, RequestStatus
 from app.models.user import User, UserRole
 from app.schemas.request import RequestCreate, RequestOut, RequestStatusUpdate
 from app.services import notifications
@@ -16,10 +16,8 @@ router = APIRouter(prefix="/requests", tags=["requests"])
 
 # Allowed status transitions. Anything not in this map is rejected.
 VALID_TRANSITIONS = {
-    RequestStatus.PENDING: {RequestStatus.ORDERED, RequestStatus.CANCELLED},
-    RequestStatus.ORDERED: {RequestStatus.FULFILLED, RequestStatus.CANCELLED},
-    RequestStatus.FULFILLED: set(),
-    RequestStatus.CANCELLED: set(),
+    RequestStatus.PENDING: {RequestStatus.DONE},
+    RequestStatus.DONE: set(),
 }
 
 
@@ -42,7 +40,6 @@ def create_request(
         product_id=payload.product_id,
         custom_product_name=payload.custom_product_name,
         quantity=payload.quantity,
-        urgency=payload.urgency,
         notes=payload.notes,
     )
     db.add(req)
@@ -64,7 +61,6 @@ def create_request(
 @router.get("", response_model=list[RequestOut])
 def list_requests(
     status_filter: RequestStatus | None = Query(default=None, alias="status"),
-    urgency: Urgency | None = Query(default=None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -74,8 +70,6 @@ def list_requests(
         q = q.filter(Request.requester_id == user.id)
     if status_filter:
         q = q.filter(Request.status == status_filter)
-    if urgency:
-        q = q.filter(Request.urgency == urgency)
     return q.order_by(Request.created_at.desc()).all()
 
 
@@ -127,35 +121,18 @@ def update_status(
 
 
 @router.delete("/{request_id}", status_code=status.HTTP_204_NO_CONTENT)
-def cancel_request(
+def delete_request(
     request_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Soft-cancel a request. Managers can cancel their own pending ones; buyers can cancel any."""
+    """Hard-delete a request. Managers can only delete their own; buyers can delete any."""
     req = db.query(Request).filter(Request.id == request_id).first()
     if not req:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Request not found")
 
-    if user.role == UserRole.MANAGER:
-        if req.requester_id != user.id:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your request")
-        if req.status != RequestStatus.PENDING:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                "Managers can only cancel pending requests",
-            )
+    if user.role == UserRole.MANAGER and req.requester_id != user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not your request")
 
-    if req.status in (RequestStatus.FULFILLED, RequestStatus.CANCELLED):
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            f"Already in terminal state: {req.status.value}",
-        )
-
-    req.status = RequestStatus.CANCELLED
-    db.add(RequestHistory(
-        request_id=req.id,
-        status=RequestStatus.CANCELLED,
-        changed_by=user.id,
-    ))
+    db.delete(req)
     db.commit()

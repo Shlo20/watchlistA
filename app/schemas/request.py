@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models.request import RequestStatus, Urgency
+from app.models.request import RequestStatus
 
 
 class RequestCreate(BaseModel):
@@ -11,7 +11,6 @@ class RequestCreate(BaseModel):
     product_id: int | None = None
     custom_product_name: str | None = Field(default=None, min_length=1, max_length=200)
     quantity: int = Field(gt=0, le=10000)
-    urgency: Urgency = Urgency.NORMAL
     notes: str | None = Field(default=None, max_length=500)
 
     @model_validator(mode="after")
@@ -37,7 +36,6 @@ class RequestOut(BaseModel):
     product_id: int | None
     custom_product_name: str | None
     quantity: int
-    urgency: Urgency
     notes: str | None
     status: RequestStatus
     created_at: datetime

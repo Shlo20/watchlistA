@@ -82,8 +82,7 @@ def notify_buyers_new_request(request_id: int) -> None:
             return
         buyers = db.query(User).filter(User.role == UserRole.BUYER).all()
         product_label = _format_product_label(req)
-        urgency_tag = " [URGENT]" if req.urgency.value == "urgent" else ""
-        body = f"New restock request{urgency_tag}: {req.quantity}x {product_label}"
+        body = f"New restock request: {req.quantity}x {product_label}"
         if req.notes:
             body += f"\nNotes: {req.notes}"
         for buyer in buyers:

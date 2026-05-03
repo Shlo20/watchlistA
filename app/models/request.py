@@ -10,15 +10,7 @@ from app.core.database import Base
 
 class RequestStatus(str, enum.Enum):
     PENDING = "pending"
-    ORDERED = "ordered"
-    FULFILLED = "fulfilled"
-    CANCELLED = "cancelled"
-
-
-class Urgency(str, enum.Enum):
-    LOW = "low"
-    NORMAL = "normal"
-    URGENT = "urgent"
+    DONE = "done"
 
 
 class Request(Base):
@@ -32,7 +24,6 @@ class Request(Base):
     custom_product_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
-    urgency: Mapped[Urgency] = mapped_column(Enum(Urgency), default=Urgency.NORMAL, nullable=False)
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     status: Mapped[RequestStatus] = mapped_column(
