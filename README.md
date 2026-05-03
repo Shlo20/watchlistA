@@ -1,4 +1,4 @@
-# RMB Restock
+# WatchlistAPP
 
 A procurement request system for retail stores. Replaces the back-and-forth WhatsApp/iMessage chaos of "we're running low on iPhone 15 cases" with a clean, trackable workflow.
 
