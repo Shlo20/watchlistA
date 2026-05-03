@@ -26,7 +26,12 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def create_access_token(subject: str, role: str) -> str:
-    """Create a signed JWT containing the user id and role."""
+    """Create a signed JWT containing the user id and role.
+
+    Expiry is intentionally long (default 30 days) because this app targets
+    non-technical store staff on mobile. Frequent re-login prompts are a
+    significant UX friction point for this audience.
+    """
     expire = datetime.now(timezone.utc) + timedelta(
         minutes=settings.access_token_expire_minutes
     )

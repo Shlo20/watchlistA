@@ -7,7 +7,7 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./rmb_restock.db"
     secret_key: str = "change-me"
-    access_token_expire_minutes: int = 1440
+    access_token_expire_minutes: int = 43200  # 30 days
     resend_api_key: str = ""
     notification_from_email: str = "restock@example.com"
     environment: str = "development"
