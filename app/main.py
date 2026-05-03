@@ -6,8 +6,8 @@ from app.routers import auth, products, requests
 
 
 app = FastAPI(
-    title="RMB Restock",
-    description="Procurement request system for retail",
+    title="Watchlist",
+    description="Procurement request system for retail stores",
     version="0.1.0",
 )
 

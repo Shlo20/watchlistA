@@ -14,3 +14,16 @@ htmlcov/
 *.sqlite3
 .idea/
 .vscode/
+
+# Claude Code
+.claude/
+CLAUDE.md
+
+# OS files
+Thumbs.db
+desktop.ini
+
+# Editor files
+*.swp
+*.swo
+*~
