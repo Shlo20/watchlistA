@@ -1,5 +1,6 @@
 """Product catalog routes."""
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -24,7 +25,11 @@ def list_products(
     if category:
         q = q.filter(Product.category == category)
     if search:
-        q = q.filter(Product.name.ilike(f"%{search}%"))
+        normalized = search.strip().lower().replace(" ", "")
+        if normalized:
+            q = q.filter(
+                func.replace(func.lower(Product.name)," ","").like(f"%{normalized}%")
+            )
     return q.order_by(Product.name).all()
 
 
