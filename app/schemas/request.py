@@ -41,6 +41,15 @@ class ClearAllResponse(BaseModel):
     request_ids: list[int]
 
 
+class MarkDoneRequest(BaseModel):
+    request_ids: list[int] = Field(min_length=1, max_length=100)
+
+
+class MarkDoneResponse(BaseModel):
+    marked_count: int
+    request_ids: list[int]
+
+
 class RequestOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

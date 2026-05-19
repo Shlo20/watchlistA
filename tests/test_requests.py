@@ -161,9 +161,135 @@ def test_buyer_can_bulk_clear_pending_requests(client, manager_token, buyer_toke
     assert all(req["status"] == "done" for req in listing)
 
 
-def test_manager_cannot_bulk_clear(client, manager_token):
+def test_manager_can_now_mark_request_done(client, manager_token):
+    r = client.post(
+        "/requests",
+        json={"custom_product_name": "Widget", "quantity": 1},
+        headers=auth_headers(manager_token),
+    )
+    rid = r.json()["id"]
+    r = client.patch(
+        f"/requests/{rid}/status",
+        json={"status": "done"},
+        headers=auth_headers(manager_token),
+    )
+    assert r.status_code == 200
+    assert r.json()["status"] == "done"
+
+
+def test_buyer_can_still_mark_request_done(client, manager_token, buyer_token):
+    r = client.post(
+        "/requests",
+        json={"custom_product_name": "Widget", "quantity": 1},
+        headers=auth_headers(manager_token),
+    )
+    rid = r.json()["id"]
+    r = client.patch(
+        f"/requests/{rid}/status",
+        json={"status": "done"},
+        headers=auth_headers(buyer_token),
+    )
+    assert r.status_code == 200
+    assert r.json()["status"] == "done"
+
+
+def test_manager_can_clear_all(client, manager_token):
+    for name in ("A", "B", "C"):
+        client.post(
+            "/requests",
+            json={"custom_product_name": name, "quantity": 1},
+            headers=auth_headers(manager_token),
+        )
     r = client.post("/requests/clear-all", headers=auth_headers(manager_token))
-    assert r.status_code == 403
+    assert r.status_code == 200
+    assert r.json()["cleared_count"] == 3
+
+
+def test_mark_done_endpoint_marks_specified_requests(client, manager_token, buyer_token):
+    ids = []
+    for name in ("X", "Y", "Z"):
+        r = client.post(
+            "/requests",
+            json={"custom_product_name": name, "quantity": 1},
+            headers=auth_headers(manager_token),
+        )
+        ids.append(r.json()["id"])
+
+    r = client.post(
+        "/requests/mark-done",
+        json={"request_ids": ids[:2]},
+        headers=auth_headers(buyer_token),
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["marked_count"] == 2
+    assert set(body["request_ids"]) == set(ids[:2])
+
+    listing = {req["id"]: req["status"] for req in
+               client.get("/requests", headers=auth_headers(buyer_token)).json()}
+    assert listing[ids[0]] == "done"
+    assert listing[ids[1]] == "done"
+    assert listing[ids[2]] == "pending"
+
+
+def test_mark_done_silently_skips_missing_ids(client, manager_token, buyer_token):
+    r = client.post(
+        "/requests",
+        json={"custom_product_name": "Real Item", "quantity": 1},
+        headers=auth_headers(manager_token),
+    )
+    real_id = r.json()["id"]
+
+    r = client.post(
+        "/requests/mark-done",
+        json={"request_ids": [real_id, 99999]},
+        headers=auth_headers(buyer_token),
+    )
+    assert r.status_code == 200
+    assert r.json()["marked_count"] == 1
+
+
+def test_mark_done_skips_already_done_requests(client, manager_token, buyer_token):
+    r = client.post(
+        "/requests",
+        json={"custom_product_name": "Already Done", "quantity": 1},
+        headers=auth_headers(manager_token),
+    )
+    rid = r.json()["id"]
+    client.patch(f"/requests/{rid}/status", json={"status": "done"},
+                 headers=auth_headers(buyer_token))
+
+    r = client.post(
+        "/requests/mark-done",
+        json={"request_ids": [rid]},
+        headers=auth_headers(buyer_token),
+    )
+    assert r.status_code == 200
+    assert r.json()["marked_count"] == 0
+
+
+def test_mark_done_requires_authentication(client):
+    r = client.post("/requests/mark-done", json={"request_ids": [1]})
+    assert r.status_code == 401
+
+
+def test_mark_done_works_for_both_roles(client, manager_token, buyer_token):
+    r1 = client.post("/requests", json={"custom_product_name": "For Buyer", "quantity": 1},
+                     headers=auth_headers(manager_token))
+    r2 = client.post("/requests", json={"custom_product_name": "For Manager", "quantity": 1},
+                     headers=auth_headers(manager_token))
+    id1 = r1.json()["id"]
+    id2 = r2.json()["id"]
+
+    rb = client.post("/requests/mark-done", json={"request_ids": [id1]},
+                     headers=auth_headers(buyer_token))
+    assert rb.status_code == 200
+    assert rb.json()["marked_count"] == 1
+
+    rm = client.post("/requests/mark-done", json={"request_ids": [id2]},
+                     headers=auth_headers(manager_token))
+    assert rm.status_code == 200
+    assert rm.json()["marked_count"] == 1
 
 
 def test_send_digest_returns_count_of_pending_items(client, manager_token, buyer_token):

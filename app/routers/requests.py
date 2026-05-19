@@ -1,5 +1,5 @@
 """Restock request routes — the heart of the app."""
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -7,7 +7,7 @@ from app.core.deps import get_current_user, require_role
 from app.models.product import Product
 from app.models.request import Request, RequestHistory, RequestStatus
 from app.models.user import User, UserRole
-from app.schemas.request import ArchiveStaleResponse, ClearAllResponse, DigestResponse, RequestCreate, RequestOut, RequestStatusUpdate
+from app.schemas.request import ArchiveStaleResponse, ClearAllResponse, DigestResponse, MarkDoneRequest, MarkDoneResponse, RequestCreate, RequestOut, RequestStatusUpdate
 from app.services import notifications
 from app.services.archive import archive_stale_pending_requests
 
@@ -72,11 +72,10 @@ def list_requests(
 
 @router.post("/clear-all", response_model=ClearAllResponse)
 def clear_all_pending(
-    background: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role(UserRole.BUYER)),
+    user: User = Depends(require_role(UserRole.BUYER, UserRole.MANAGER)),
 ):
-    """Buyer marks every pending request as done in one shot ('Got everything' button)."""
+    """Manager or buyer marks every pending request as done in one shot."""
     pending = db.query(Request).filter(Request.status == RequestStatus.PENDING).all()
 
     for req in pending:
@@ -90,9 +89,6 @@ def clear_all_pending(
     db.commit()
 
     cleared_ids = [req.id for req in pending]
-    for rid in cleared_ids:
-        background.add_task(notifications.notify_requester_status_change, rid)
-
     return {"cleared_count": len(cleared_ids), "request_ids": cleared_ids}
 
 
@@ -132,15 +128,37 @@ def get_request(
     return req
 
 
+@router.post("/mark-done", response_model=MarkDoneResponse)
+def mark_done(
+    payload: MarkDoneRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_role(UserRole.BUYER, UserRole.MANAGER)),
+):
+    """Mark a specific list of requests as done. Missing or already-done IDs are silently skipped."""
+    marked_ids = []
+    for rid in payload.request_ids:
+        req = db.query(Request).filter(Request.id == rid).first()
+        if req is None or req.status != RequestStatus.PENDING:
+            continue
+        req.status = RequestStatus.DONE
+        db.add(RequestHistory(
+            request_id=req.id,
+            status=RequestStatus.DONE,
+            changed_by=user.id,
+        ))
+        marked_ids.append(rid)
+    db.commit()
+    return {"marked_count": len(marked_ids), "request_ids": marked_ids}
+
+
 @router.patch("/{request_id}/status", response_model=RequestOut)
 def update_status(
     request_id: int,
     payload: RequestStatusUpdate,
-    background: BackgroundTasks,
     db: Session = Depends(get_db),
-    user: User = Depends(require_role(UserRole.BUYER)),
+    user: User = Depends(require_role(UserRole.BUYER, UserRole.MANAGER)),
 ):
-    """Buyer transitions a request through its lifecycle."""
+    """Manager or buyer transitions a request through its lifecycle."""
     req = db.query(Request).filter(Request.id == request_id).first()
     if not req:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Request not found")
@@ -159,8 +177,6 @@ def update_status(
     ))
     db.commit()
     db.refresh(req)
-
-    background.add_task(notifications.notify_requester_status_change, req.id)
     return req
 
 

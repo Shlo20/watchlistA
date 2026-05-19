@@ -107,10 +107,11 @@ def send_daily_digest(db=None) -> int:
     if _owned:
         db = SessionLocal()
     try:
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(hours=24)
         pending = (
             db.query(Request)
-            .filter(Request.status == RequestStatus.PENDING, Request.created_at >= cutoff)
+            .filter(Request.status == RequestStatus.PENDING)
             .order_by(Request.created_at.asc())
             .all()
         )
@@ -118,18 +119,24 @@ def send_daily_digest(db=None) -> int:
             return 0
 
         lines = []
-        for req in pending:
+        for i, req in enumerate(pending, start=1):
             if req.product:
                 label = req.product.name
             else:
                 label = f"Custom item: {req.custom_product_name or 'Unknown'}"
-            lines.append(f"- {req.quantity}x {label}")
+            line = f"{i}. {req.quantity}x {label}"
+            created = req.created_at
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            if created < cutoff:
+                line = f"[!] {line}"
+            lines.append(line)
 
         count = len(lines)
         body = (
             f"Today's restock list ({count} item{'s' if count != 1 else ''}):\n"
             + "\n".join(lines)
-            + "\nReply 'done' when handled or open the app."
+            + "\nOpen the app to confirm what was received."
         )
 
         buyers = db.query(User).filter(User.role == UserRole.BUYER).all()
