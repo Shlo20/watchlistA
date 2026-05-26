@@ -4,6 +4,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.models.request import RequestStatus
+from app.schemas.product import ProductOut
 
 
 class RequestCreate(BaseModel):
@@ -56,6 +57,7 @@ class RequestOut(BaseModel):
     id: int
     requester_id: int
     product_id: int | None
+    product: ProductOut | None = None
     custom_product_name: str | None
     quantity: int
     notes: str | None

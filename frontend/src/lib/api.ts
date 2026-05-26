@@ -16,6 +16,36 @@ export interface TokenResponse {
   user: User;
 }
 
+export type ProductCategory =
+  | "phone"
+  | "tablet"
+  | "case"
+  | "screen_protector"
+  | "other";
+
+export interface Product {
+  id: number;
+  name: string;
+  category: ProductCategory;
+  sku?: string;
+  default_unit_cost?: number | null;
+  created_at: string;
+}
+
+export type RequestStatus = "pending" | "done";
+
+export interface RequestOut {
+  id: number;
+  product_id: number | null;
+  product: Product | null;
+  custom_product_name: string | null;
+  quantity: number;
+  status: RequestStatus;
+  created_by_id: number;
+  created_at: string;
+  updated_at: string | null;
+}
+
 const TOKEN_KEY = "watchlist_token";
 
 const api = axios.create({
@@ -49,6 +79,45 @@ export async function loginApi(
     phone,
     password,
   });
+  return data;
+}
+
+export async function searchProducts(query: string): Promise<Product[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  const { data } = await api.get<Product[]>("/products", {
+    params: { search: trimmed },
+  });
+  return data;
+}
+
+export async function createRequest(payload: {
+  product_id?: number;
+  custom_product_name?: string;
+  quantity: number;
+}): Promise<RequestOut> {
+  const { data } = await api.post<RequestOut>("/requests", payload);
+  return data;
+}
+
+export async function listRequests(params?: {
+  status?: RequestStatus;
+}): Promise<RequestOut[]> {
+  const { data } = await api.get<RequestOut[]>("/requests", { params });
+  return data;
+}
+
+export async function deleteRequest(id: number): Promise<void> {
+  await api.delete(`/requests/${id}`);
+}
+
+export async function markDone(
+  requestIds: number[]
+): Promise<{ marked_count: number; request_ids: number[] }> {
+  const { data } = await api.post<{
+    marked_count: number;
+    request_ids: number[];
+  }>("/requests/mark-done", { request_ids: requestIds });
   return data;
 }
 

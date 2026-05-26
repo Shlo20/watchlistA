@@ -1,6 +1,6 @@
 """Restock request routes — the heart of the app."""
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, require_role
@@ -51,8 +51,12 @@ def create_request(
         changed_by=user.id,
     ))
     db.commit()
-    db.refresh(req)
-    return req
+    return (
+        db.query(Request)
+        .options(joinedload(Request.product))
+        .filter(Request.id == req.id)
+        .first()
+    )
 
 
 @router.get("", response_model=list[RequestOut])
@@ -62,7 +66,7 @@ def list_requests(
     user: User = Depends(get_current_user),
 ):
     """List requests. Managers see only their own; buyers see everything."""
-    q = db.query(Request)
+    q = db.query(Request).options(joinedload(Request.product))
     if user.role == UserRole.MANAGER:
         q = q.filter(Request.requester_id == user.id)
     if status_filter:
@@ -119,7 +123,12 @@ def get_request(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    req = db.query(Request).filter(Request.id == request_id).first()
+    req = (
+        db.query(Request)
+        .options(joinedload(Request.product))
+        .filter(Request.id == request_id)
+        .first()
+    )
     if not req:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Request not found")
     # Managers can only see their own requests.
@@ -176,8 +185,12 @@ def update_status(
         changed_by=user.id,
     ))
     db.commit()
-    db.refresh(req)
-    return req
+    return (
+        db.query(Request)
+        .options(joinedload(Request.product))
+        .filter(Request.id == request_id)
+        .first()
+    )
 
 
 @router.delete("/{request_id}", status_code=status.HTTP_204_NO_CONTENT)
