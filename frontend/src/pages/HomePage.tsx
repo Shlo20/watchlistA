@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import ManagerScreen from "@/pages/ManagerScreen";
+import BuyerScreen from "@/pages/BuyerScreen";
 
 export default function HomePage() {
   const { user, logout } = useAuth();
@@ -24,8 +25,9 @@ export default function HomePage() {
       </header>
       {user?.role === "manager" ? (
         <ManagerScreen />
+      ) : user?.role === "buyer" ? (
+        <BuyerScreen />
       ) : (
-        // TODO: Replace with BuyerScreen when built
         <main className="flex flex-col items-center justify-center min-h-[calc(100vh-65px)] gap-2">
           <h1 className="text-3xl font-bold">Welcome, {user?.name}</h1>
           <p className="text-muted-foreground">
