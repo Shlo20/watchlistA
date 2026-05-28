@@ -2,16 +2,15 @@
 
 Free alternative to Twilio. Send an email to {phone}@{carrier_gateway} and the
 recipient's phone shows it as a text. Swap this module for Twilio later by
-re-implementing the two `notify_*` functions.
+re-implementing the public `notify_*` functions.
 """
 import logging
+import smtplib
 from datetime import datetime, timedelta, timezone
-
-import httpx
+from email.mime.text import MIMEText
 
 from app.core.config import settings
 from app.core.database import SessionLocal
-from app.models.product import Product
 from app.models.request import Request, RequestStatus
 from app.models.user import User, UserRole
 
@@ -26,45 +25,50 @@ CARRIER_GATEWAYS = {
     "sprint": "messaging.sprintpcs.com",
     "boost": "sms.myboostmobile.com",
     "cricket": "sms.cricketwireless.net",
+    "metro": "mymetropcs.com",
+    "uscellular": "email.uscc.net",
+    "simple": "tmomail.net",        # Simple Mobile uses T-Mobile network
+    "mint": "tmomail.net",          # Mint Mobile uses T-Mobile network
+    "straighttalk": "vtext.com",    # Straight Talk defaults to Verizon network
 }
 
 
-def _gateway_address(phone: str, carrier: str | None) -> str | None:
-    """Build the SMS gateway email address for a phone + carrier."""
-    if not carrier:
+def _build_sms_email(user) -> str | None:
+    """Return the carrier SMS gateway email for a user, or None if not configured."""
+    if not user.carrier:
+        logger.warning("User %s has no carrier set; skipping SMS", user.id)
         return None
-    domain = CARRIER_GATEWAYS.get(carrier.lower())
+    domain = CARRIER_GATEWAYS.get(user.carrier.lower())
     if not domain:
+        logger.warning("Unknown carrier %r for user %s; skipping SMS", user.carrier, user.id)
         return None
-    digits = "".join(c for c in phone if c.isdigit())
+    digits = "".join(c for c in user.phone if c.isdigit())
     if len(digits) == 11 and digits.startswith("1"):
         digits = digits[1:]
     if len(digits) != 10:
+        logger.warning("Phone %r for user %s is not 10 digits; skipping SMS", user.phone, user.id)
         return None
     return f"{digits}@{domain}"
 
 
-def _send_sms_via_email(to_email: str, body: str) -> bool:
-    """Send an email through Resend that gets delivered as an SMS."""
-    if not settings.resend_api_key:
-        logger.warning("RESEND_API_KEY not configured; skipping notification to %s", to_email)
-        return False
-    try:
-        r = httpx.post(
-            "https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {settings.resend_api_key}"},
-            json={
-                "from": settings.notification_from_email,
-                "to": [to_email],
-                "subject": "",  # carriers ignore subject for SMS
-                "text": body,
-            },
-            timeout=10,
-        )
-        r.raise_for_status()
+def _send_sms_via_gmail(to_address: str, body: str) -> bool:
+    """Send a plain-text message to a carrier email-to-SMS gateway via Gmail SMTP."""
+    if not settings.sms_enabled:
+        logger.info("SMS disabled, would have sent to %s: %s", to_address, body[:100])
         return True
-    except httpx.HTTPError as e:
-        logger.error("Failed to send notification: %s", e)
+    try:
+        msg = MIMEText(body, "plain")
+        msg["From"] = settings.gmail_address
+        msg["To"] = to_address
+        msg["Subject"] = ""
+        with smtplib.SMTP("smtp.gmail.com", 587) as smtp:
+            smtp.starttls()
+            smtp.login(settings.gmail_address, settings.gmail_app_password)
+            smtp.sendmail(settings.gmail_address, to_address, msg.as_string())
+        logger.info("SMS sent to %s", to_address)
+        return True
+    except Exception as e:
+        logger.error("Failed to send SMS to %s: %s", to_address, e)
         return False
 
 
@@ -87,21 +91,21 @@ def notify_buyers_new_request(request_id: int) -> None:
         if req.notes:
             body += f"\nNotes: {req.notes}"
         for buyer in buyers:
-            addr = _gateway_address(buyer.phone, buyer.carrier)
+            addr = _build_sms_email(buyer)
             if addr:
-                _send_sms_via_email(addr, body)
+                _send_sms_via_gmail(addr, body)
     finally:
         db.close()
 
 
 def send_daily_digest(db=None) -> int:
-    """Send one SMS to every buyer listing all pending requests from the last 24 hours.
+    """Send one SMS to every buyer listing all pending requests.
 
     Accepts an optional db session so it can be called from an endpoint that
     already has an injected (test-overrideable) session. When called with no
     arguments (e.g. from a scheduler), it opens and closes its own session.
 
-    Returns the number of items in the digest (0 if nothing was sent).
+    Returns the number of items in the digest (0 if nothing to send).
     """
     _owned = db is None
     if _owned:
@@ -140,10 +144,18 @@ def send_daily_digest(db=None) -> int:
         )
 
         buyers = db.query(User).filter(User.role == UserRole.BUYER).all()
+        successes = 0
+        failures = 0
         for buyer in buyers:
-            addr = _gateway_address(buyer.phone, buyer.carrier)
+            addr = _build_sms_email(buyer)
             if addr:
-                _send_sms_via_email(addr, body)
+                if _send_sms_via_gmail(addr, body):
+                    successes += 1
+                else:
+                    failures += 1
+
+        if successes or failures:
+            logger.info("Digest send complete: %d succeeded, %d failed", successes, failures)
 
         return count
     finally:
@@ -163,8 +175,8 @@ def notify_requester_status_change(request_id: int) -> None:
             return
         product_label = _format_product_label(req)
         body = f"Your request ({req.quantity}x {product_label}) is now: {req.status.value.upper()}"
-        addr = _gateway_address(requester.phone, requester.carrier)
+        addr = _build_sms_email(requester)
         if addr:
-            _send_sms_via_email(addr, body)
+            _send_sms_via_gmail(addr, body)
     finally:
         db.close()

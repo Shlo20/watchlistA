@@ -8,9 +8,11 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./watchlist.db"
     secret_key: str = "change-me"
     access_token_expire_minutes: int = 43200  # 30 days
-    resend_api_key: str = ""
-    notification_from_email: str = "restock@example.com"
     environment: str = "development"
+
+    gmail_address: str = ""
+    gmail_app_password: str = ""
+    sms_enabled: bool = True
 
     scheduler_enabled: bool = True
     digest_hour: int = 6

@@ -1,6 +1,7 @@
 """Shared pytest fixtures. Uses an in-memory SQLite DB for fast, isolated tests."""
 import os
 os.environ["SCHEDULER_ENABLED"] = "false"
+os.environ["SMS_ENABLED"] = "false"
 
 import pytest
 from fastapi.testclient import TestClient
