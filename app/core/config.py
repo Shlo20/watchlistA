@@ -12,5 +12,9 @@ class Settings(BaseSettings):
     notification_from_email: str = "restock@example.com"
     environment: str = "development"
 
+    scheduler_enabled: bool = True
+    digest_hour: int = 6
+    archive_hour: int = 3
+
 
 settings = Settings()
