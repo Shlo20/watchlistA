@@ -75,7 +75,7 @@ def _send_sms_via_brevo(to_address: str, body: str) -> bool:
             json={
                 "sender": {"email": settings.brevo_sender_email, "name": "Watchlist"},
                 "to": [{"email": to_address}],
-                "subject": "",
+                "subject": " ",
                 "textContent": body,
             },
             timeout=10.0,
