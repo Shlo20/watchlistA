@@ -1,0 +1,40 @@
+# Version control
+.git
+.gitignore
+
+# Python artifacts
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+.coverage
+htmlcov
+
+# Local databases — never ship these
+*.db
+*.sqlite
+*.sqlite3
+
+# Secrets — belt-and-suspenders on top of .gitignore
+.env
+.env.local
+.env.*.local
+
+# Editor/OS noise
+.idea
+.vscode
+*.log
+.DS_Store
+Thumbs.db
+
+# Frontend is deployed separately to Vercel
+frontend
+
+# Dev/docs — not needed at runtime
+tests
+README.md
+Dockerfile
+.dockerignore
