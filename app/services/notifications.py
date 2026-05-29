@@ -5,9 +5,8 @@ recipient's phone shows it as a text. Swap this module for Twilio later by
 re-implementing the public `notify_*` functions.
 """
 import logging
-import smtplib
+import httpx
 from datetime import datetime, timedelta, timezone
-from email.mime.text import MIMEText
 
 from app.core.config import settings
 from app.core.database import SessionLocal
@@ -51,22 +50,42 @@ def _build_sms_email(user) -> str | None:
     return f"{digits}@{domain}"
 
 
-def _send_sms_via_gmail(to_address: str, body: str) -> bool:
-    """Send a plain-text message to a carrier email-to-SMS gateway via Gmail SMTP."""
+def _send_sms_via_brevo(to_address: str, body: str) -> bool:
+    """Send a plain-text message to a carrier email-to-SMS gateway via Brevo's HTTPS API."""
     if not settings.sms_enabled:
         logger.info("SMS disabled, would have sent to %s: %s", to_address, body[:100])
         return True
+
+    if not settings.brevo_api_key:
+        logger.error("BREVO_API_KEY not set, skipping send to %s", to_address)
+        return False
+
+    if not settings.brevo_sender_email:
+        logger.error("BREVO_SENDER_EMAIL not set, skipping send to %s", to_address)
+        return False
+
     try:
-        msg = MIMEText(body, "plain")
-        msg["From"] = settings.gmail_address
-        msg["To"] = to_address
-        msg["Subject"] = ""
-        with smtplib.SMTP("smtp.gmail.com", 587) as smtp:
-            smtp.starttls()
-            smtp.login(settings.gmail_address, settings.gmail_app_password)
-            smtp.sendmail(settings.gmail_address, to_address, msg.as_string())
-        logger.info("SMS sent to %s", to_address)
+        response = httpx.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={
+                "api-key": settings.brevo_api_key,
+                "Content-Type": "application/json",
+                "accept": "application/json",
+            },
+            json={
+                "sender": {"email": settings.brevo_sender_email, "name": "Watchlist"},
+                "to": [{"email": to_address}],
+                "subject": "",
+                "textContent": body,
+            },
+            timeout=10.0,
+        )
+        response.raise_for_status()
+        logger.info("SMS sent to %s via Brevo", to_address)
         return True
+    except httpx.HTTPStatusError as e:
+        logger.error("Brevo API error sending to %s: %s %s", to_address, e.response.status_code, e.response.text)
+        return False
     except Exception as e:
         logger.error("Failed to send SMS to %s: %s", to_address, e)
         return False
@@ -93,7 +112,7 @@ def notify_buyers_new_request(request_id: int) -> None:
         for buyer in buyers:
             addr = _build_sms_email(buyer)
             if addr:
-                _send_sms_via_gmail(addr, body)
+                _send_sms_via_brevo(addr, body)
     finally:
         db.close()
 
@@ -149,7 +168,7 @@ def send_daily_digest(db=None) -> int:
         for buyer in buyers:
             addr = _build_sms_email(buyer)
             if addr:
-                if _send_sms_via_gmail(addr, body):
+                if _send_sms_via_brevo(addr, body):
                     successes += 1
                 else:
                     failures += 1
@@ -177,6 +196,6 @@ def notify_requester_status_change(request_id: int) -> None:
         body = f"Your request ({req.quantity}x {product_label}) is now: {req.status.value.upper()}"
         addr = _build_sms_email(requester)
         if addr:
-            _send_sms_via_gmail(addr, body)
+            _send_sms_via_brevo(addr, body)
     finally:
         db.close()

@@ -358,11 +358,10 @@ def test_unauthenticated_request_rejected(client):
     assert r.status_code == 401
 
 
-def test_send_digest_does_not_open_smtp_when_sms_disabled(client, manager_token, buyer_token):
-    """SMS_ENABLED=false (set in conftest) must never open an SMTP connection."""
+def test_send_digest_does_not_call_brevo_when_sms_disabled(client, manager_token, buyer_token):
+    """SMS_ENABLED=false (set in conftest) must never make an outbound HTTP call to Brevo."""
     from unittest.mock import patch
-    import smtplib
-    from app.services import notifications
+    import httpx
 
     # Register buyer with a known phone + carrier so _build_sms_email returns an address
     client.post("/auth/register", json={
@@ -376,8 +375,8 @@ def test_send_digest_does_not_open_smtp_when_sms_disabled(client, manager_token,
     client.post("/requests", json={"custom_product_name": "Widget", "quantity": 1},
                 headers=auth_headers(manager_token))
 
-    with patch.object(smtplib, "SMTP") as mock_smtp:
+    with patch.object(httpx, "post") as mock_post:
         r = client.post("/requests/send-digest", headers=auth_headers(buyer_token))
         assert r.status_code == 200
         assert r.json()["items_in_digest"] == 1
-        mock_smtp.assert_not_called()
+        mock_post.assert_not_called()

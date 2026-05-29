@@ -10,9 +10,13 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 43200  # 30 days
     environment: str = "development"
 
+    brevo_api_key: str = ""
+    brevo_sender_email: str = ""
+    sms_enabled: bool = True
+
+    # Deprecated: Gmail SMTP no longer used in production. Brevo HTTPS API replaces it.
     gmail_address: str = ""
     gmail_app_password: str = ""
-    sms_enabled: bool = True
 
     scheduler_enabled: bool = True
     digest_hour: int = 6
