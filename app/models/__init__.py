@@ -2,9 +2,15 @@
 from app.models.user import User
 from app.models.product import Product, ProductCategory
 from app.models.request import Request, RequestStatus, RequestHistory
+from app.models.contact import Contact
+from app.models.list import List, ListItem
+from app.models.send import Send, SendItemState
 
 __all__ = [
     "User",
     "Product", "ProductCategory",
     "Request", "RequestStatus", "RequestHistory",
+    "Contact",
+    "List", "ListItem",
+    "Send", "SendItemState",
 ]
