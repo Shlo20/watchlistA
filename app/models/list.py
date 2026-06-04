@@ -44,3 +44,4 @@ class ListItem(Base):
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     parent_list = relationship("List", back_populates="items")
+    product = relationship("Product")
