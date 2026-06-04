@@ -1,11 +1,11 @@
-"""FastAPI dependencies for auth — get current user, enforce role."""
+"""FastAPI dependencies for auth."""
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.security import decode_access_token
-from app.models.user import User, UserRole
+from app.models.user import User
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
@@ -25,14 +25,3 @@ def get_current_user(
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
     return user
-
-
-def require_role(*roles: UserRole):
-    def checker(user: User = Depends(get_current_user)) -> User:
-        if user.role not in roles:
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN,
-                f"Requires one of roles: {[r.value for r in roles]}",
-            )
-        return user
-    return checker

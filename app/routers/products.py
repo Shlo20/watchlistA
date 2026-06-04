@@ -4,9 +4,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import get_current_user, require_role
+from app.core.deps import get_current_user
 from app.models.product import Product, ProductCategory
-from app.models.user import UserRole
 from app.schemas.product import ProductCreate, ProductOut
 
 
@@ -28,7 +27,7 @@ def list_products(
         normalized = search.strip().lower().replace(" ", "")
         if normalized:
             q = q.filter(
-                func.replace(func.lower(Product.name)," ","").like(f"%{normalized}%")
+                func.replace(func.lower(Product.name), " ", "").like(f"%{normalized}%")
             )
     return q.order_by(Product.name).all()
 
@@ -37,9 +36,9 @@ def list_products(
 def create_product(
     payload: ProductCreate,
     db: Session = Depends(get_db),
-    _buyer=Depends(require_role(UserRole.BUYER)),
+    _user=Depends(get_current_user),
 ):
-    """Only buyers can add new SKUs to the catalog."""
+    """Any authenticated user can add new SKUs to the catalog."""
     product = Product(**payload.model_dump())
     db.add(product)
     db.commit()

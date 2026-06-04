@@ -6,13 +6,23 @@ def test_register_creates_user(client):
         "name": "Alice",
         "phone": "5551112222",
         "password": "supersecret",
-        "role": "manager",
     })
     assert r.status_code == 201
     body = r.json()
     assert body["name"] == "Alice"
-    assert body["role"] == "manager"
+    assert body["plan"] == "free"
     assert "password" not in body  # never leak the password
+
+
+def test_register_normalizes_phone(client):
+    """Phone is stored in E.164 format regardless of how it was supplied."""
+    r = client.post("/auth/register", json={
+        "name": "Alice",
+        "phone": "646-752-2092",
+        "password": "supersecret",
+    })
+    assert r.status_code == 201
+    assert r.json()["phone"] == "+16467522092"
 
 
 def test_register_rejects_duplicate_phone(client):
@@ -20,7 +30,6 @@ def test_register_rejects_duplicate_phone(client):
         "name": "Alice",
         "phone": "5551113333",
         "password": "supersecret",
-        "role": "manager",
     }
     client.post("/auth/register", json=payload)
     r = client.post("/auth/register", json=payload)
@@ -32,7 +41,6 @@ def test_register_rejects_short_password(client):
         "name": "Alice",
         "phone": "5551114444",
         "password": "short",
-        "role": "manager",
     })
     assert r.status_code == 422
 
@@ -42,7 +50,6 @@ def test_login_returns_token(client):
         "name": "Bob",
         "phone": "5551115555",
         "password": "supersecret",
-        "role": "buyer",
     })
     r = client.post("/auth/login", json={
         "phone": "5551115555",
@@ -51,7 +58,7 @@ def test_login_returns_token(client):
     assert r.status_code == 200
     body = r.json()
     assert "access_token" in body
-    assert body["user"]["role"] == "buyer"
+    assert body["user"]["plan"] == "free"
 
 
 def test_login_rejects_wrong_password(client):
@@ -59,7 +66,6 @@ def test_login_rejects_wrong_password(client):
         "name": "Bob",
         "phone": "5551116666",
         "password": "supersecret",
-        "role": "buyer",
     })
     r = client.post("/auth/login", json={
         "phone": "5551116666",

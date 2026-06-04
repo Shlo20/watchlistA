@@ -25,8 +25,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return False
 
 
-def create_access_token(subject: str, role: str) -> str:
-    """Create a signed JWT containing the user id and role.
+def create_access_token(subject: str) -> str:
+    """Create a signed JWT.
 
     Expiry is intentionally long (default 30 days) because this app targets
     non-technical store staff on mobile. Frequent re-login prompts are a
@@ -35,7 +35,7 @@ def create_access_token(subject: str, role: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(
         minutes=settings.access_token_expire_minutes
     )
-    payload = {"sub": subject, "role": role, "exp": expire}
+    payload = {"sub": subject, "exp": expire}
     return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
 
 

@@ -3,15 +3,12 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.user import UserRole
-
 
 class UserCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     phone: str = Field(min_length=7, max_length=20)
     carrier: str | None = Field(default=None, max_length=20)
     password: str = Field(min_length=8, max_length=100)
-    role: UserRole
 
 
 class UserOut(BaseModel):
@@ -20,7 +17,7 @@ class UserOut(BaseModel):
     id: int
     name: str
     phone: str
-    role: UserRole
+    plan: str
     created_at: datetime
 
 

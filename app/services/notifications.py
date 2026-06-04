@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.request import Request, RequestStatus
-from app.models.user import User, UserRole
+from app.models.user import User
 
 
 logger = logging.getLogger(__name__)
@@ -98,19 +98,19 @@ def _format_product_label(req: Request) -> str:
 
 
 def notify_buyers_new_request(request_id: int) -> None:
-    """Text every buyer when a new pending request is created."""
+    """Text all users when a new pending request is created."""
     db = SessionLocal()
     try:
         req = db.query(Request).filter(Request.id == request_id).first()
         if not req:
             return
-        buyers = db.query(User).filter(User.role == UserRole.BUYER).all()
+        users = db.query(User).all()
         product_label = _format_product_label(req)
         body = f"New restock request: {req.quantity}x {product_label}"
         if req.notes:
             body += f"\nNotes: {req.notes}"
-        for buyer in buyers:
-            addr = _build_sms_email(buyer)
+        for user in users:
+            addr = _build_sms_email(user)
             if addr:
                 _send_sms_via_brevo(addr, body)
     finally:
@@ -118,7 +118,7 @@ def notify_buyers_new_request(request_id: int) -> None:
 
 
 def send_daily_digest(db=None) -> int:
-    """Send one SMS to every buyer listing all pending requests.
+    """Send one SMS to every user listing all pending requests.
 
     Accepts an optional db session so it can be called from an endpoint that
     already has an injected (test-overrideable) session. When called with no
@@ -162,11 +162,11 @@ def send_daily_digest(db=None) -> int:
             + "\nOpen the app to confirm what was received."
         )
 
-        buyers = db.query(User).filter(User.role == UserRole.BUYER).all()
+        users = db.query(User).all()
         successes = 0
         failures = 0
-        for buyer in buyers:
-            addr = _build_sms_email(buyer)
+        for user in users:
+            addr = _build_sms_email(user)
             if addr:
                 if _send_sms_via_brevo(addr, body):
                     successes += 1
@@ -183,7 +183,7 @@ def send_daily_digest(db=None) -> int:
 
 
 def notify_requester_status_change(request_id: int) -> None:
-    """Text the manager who made the request when its status changes."""
+    """Text the user who made the request when its status changes."""
     db = SessionLocal()
     try:
         req = db.query(Request).filter(Request.id == request_id).first()

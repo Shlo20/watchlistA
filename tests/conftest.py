@@ -63,7 +63,6 @@ def manager_token(client):
         "name": "Test Manager",
         "phone": "5551110001",
         "password": "password123",
-        "role": "manager",
     })
     r = client.post("/auth/login", json={
         "phone": "5551110001",
@@ -78,7 +77,6 @@ def buyer_token(client):
         "name": "Test Buyer",
         "phone": "5552220001",
         "password": "password123",
-        "role": "buyer",
     })
     r = client.post("/auth/login", json={
         "phone": "5552220001",

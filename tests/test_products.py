@@ -18,13 +18,14 @@ def test_buyer_can_create_product(client, buyer_token):
     assert body["is_active"] is True
 
 
-def test_manager_cannot_create_product(client, manager_token):
+def test_any_authenticated_user_can_create_product(client, manager_token):
+    """Any authenticated user can add SKUs — product creation is no longer role-gated."""
     r = client.post(
         "/products",
         json={"name": "Samsung Galaxy S24", "category": "phone"},
         headers=auth_headers(manager_token),
     )
-    assert r.status_code == 403
+    assert r.status_code == 201
 
 
 def test_list_products_returns_created_catalog(client, buyer_token):
