@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
+import ContactsSection from "@/pages/ContactsSection";
+import ListsSection from "@/pages/ListsSection";
 
 type Section = "lists" | "contacts" | "inbox";
 
@@ -47,8 +49,14 @@ export default function HomePage() {
           ))}
         </nav>
 
-        <main className="flex-1 flex items-center justify-center">
-          <p className="text-muted-foreground capitalize">{active} — coming soon</p>
+        <main className="flex-1 overflow-auto">
+          {active === "lists" && <ListsSection />}
+          {active === "contacts" && <ContactsSection />}
+          {active === "inbox" && (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-muted-foreground">Inbox — coming soon</p>
+            </div>
+          )}
         </main>
       </div>
     </div>

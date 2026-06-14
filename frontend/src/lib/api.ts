@@ -136,4 +136,112 @@ export async function markDone(
   return data;
 }
 
+// ---- Contacts ----
+
+export interface Contact {
+  id: number;
+  nickname: string;
+  phone: string;
+  linked_user_id: number | null;
+  created_at: string;
+}
+
+export async function listContacts(): Promise<Contact[]> {
+  const { data } = await api.get<Contact[]>("/contacts");
+  return data;
+}
+
+export async function createContact(payload: {
+  nickname: string;
+  phone: string;
+}): Promise<Contact> {
+  const { data } = await api.post<Contact>("/contacts", payload);
+  return data;
+}
+
+export async function updateContact(
+  id: number,
+  payload: { nickname?: string; phone?: string }
+): Promise<Contact> {
+  const { data } = await api.patch<Contact>(`/contacts/${id}`, payload);
+  return data;
+}
+
+export async function deleteContact(id: number): Promise<void> {
+  await api.delete(`/contacts/${id}`);
+}
+
+// ---- Lists ----
+
+export interface ListItem {
+  id: number;
+  product_id: number | null;
+  product: Product | null;
+  custom_product_name: string | null;
+  quantity: number;
+}
+
+export interface WatchList {
+  id: number;
+  title: string | null;
+  items: ListItem[];
+  created_at: string;
+}
+
+export async function createList(payload: {
+  title?: string;
+  items: Array<{
+    product_id?: number;
+    custom_product_name?: string;
+    quantity: number;
+  }>;
+}): Promise<WatchList> {
+  const { data } = await api.post<WatchList>("/lists", payload);
+  return data;
+}
+
+export async function listLists(): Promise<WatchList[]> {
+  const { data } = await api.get<WatchList[]>("/lists");
+  return data;
+}
+
+export async function getList(id: number): Promise<WatchList> {
+  const { data } = await api.get<WatchList>(`/lists/${id}`);
+  return data;
+}
+
+export async function updateList(
+  id: number,
+  payload: { title?: string }
+): Promise<WatchList> {
+  const { data } = await api.patch<WatchList>(`/lists/${id}`, payload);
+  return data;
+}
+
+export async function deleteList(id: number): Promise<void> {
+  await api.delete(`/lists/${id}`);
+}
+
+// ---- Send ----
+
+export interface SendOut {
+  id: number;
+  list_id: number;
+  recipient_user_id: number | null;
+  wa_link: string | null;
+  created_at: string;
+}
+
+export type SendRecipient = { contact_id: number } | { phone: string };
+
+export async function sendList(
+  listId: number,
+  recipients: SendRecipient[]
+): Promise<SendOut[]> {
+  const { data } = await api.post<SendOut[]>(`/lists/${listId}/send`, {
+    recipients,
+  });
+  return data;
+}
+
 export default api;
