@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -71,6 +71,12 @@ export default function LoginPage() {
             </Button>
             <p className="text-center text-xs text-muted-foreground">
               Stay signed in for 30 days
+            </p>
+            <p className="text-center text-xs text-muted-foreground">
+              No account?{" "}
+              <Link to="/register" className="underline hover:text-foreground">
+                Create one
+              </Link>
             </p>
           </form>
         </CardContent>

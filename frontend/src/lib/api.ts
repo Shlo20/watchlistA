@@ -1,12 +1,10 @@
 import axios from "axios";
 
-export type UserRole = "manager" | "buyer";
-
 export interface User {
   id: number;
   name: string;
   phone: string;
-  role: UserRole;
+  plan: string;
   created_at: string;
 }
 
@@ -81,6 +79,21 @@ export async function loginApi(
     phone,
     password,
   });
+  return data;
+}
+
+export async function requestCode(phone: string): Promise<void> {
+  await api.post("/auth/request-code", { phone });
+}
+
+export async function registerApi(payload: {
+  name: string;
+  phone: string;
+  password: string;
+  carrier?: string;
+  code: string;
+}): Promise<TokenResponse> {
+  const { data } = await api.post<TokenResponse>("/auth/register", payload);
   return data;
 }
 
