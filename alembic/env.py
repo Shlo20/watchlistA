@@ -14,6 +14,7 @@ from app.models.request import Request, RequestHistory  # noqa
 from app.models.contact import Contact  # noqa
 from app.models.list import List, ListItem  # noqa
 from app.models.send import Send, SendItemState  # noqa
+from app.models.verification import PhoneVerification  # noqa
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

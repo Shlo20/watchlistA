@@ -4,11 +4,16 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class RequestCodePayload(BaseModel):
+    phone: str = Field(min_length=7, max_length=20)
+
+
 class UserCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     phone: str = Field(min_length=7, max_length=20)
     carrier: str | None = Field(default=None, max_length=20)
     password: str = Field(min_length=8, max_length=100)
+    code: str = Field(min_length=1, max_length=10)
 
 
 class UserOut(BaseModel):

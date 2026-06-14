@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     brevo_api_key: str = ""
     brevo_sender_email: str = ""
     sms_enabled: bool = True
+    sms_verification_enabled: bool = False
 
     # Deprecated: Gmail SMTP no longer used in production. Brevo HTTPS API replaces it.
     gmail_address: str = ""

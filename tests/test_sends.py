@@ -19,7 +19,8 @@ def _make_list(client, token, title="My List", items=None):
 
 
 def _register(client, name, phone, password="password123"):
-    client.post("/auth/register", json={"name": name, "phone": phone, "password": password})
+    client.post("/auth/request-code", json={"phone": phone})
+    client.post("/auth/register", json={"name": name, "phone": phone, "password": password, "code": "000000"})
     r = client.post("/auth/login", json={"phone": phone, "password": password})
     return r.json()["access_token"]
 

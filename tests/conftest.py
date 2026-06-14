@@ -57,29 +57,26 @@ def client(db_session):
     app.dependency_overrides.clear()
 
 
+def register_user(client, name, phone, password="password123", carrier=None):
+    """Two-step registration helper: POST /auth/request-code then /auth/register with code='000000'."""
+    client.post("/auth/request-code", json={"phone": phone})
+    payload = {"name": name, "phone": phone, "password": password, "code": "000000"}
+    if carrier is not None:
+        payload["carrier"] = carrier
+    r = client.post("/auth/register", json=payload)
+    assert r.status_code == 201, f"register_user failed: {r.status_code} {r.json()}"
+    return r.json()
+
+
 @pytest.fixture
 def manager_token(client):
-    client.post("/auth/register", json={
-        "name": "Test Manager",
-        "phone": "5551110001",
-        "password": "password123",
-    })
-    r = client.post("/auth/login", json={
-        "phone": "5551110001",
-        "password": "password123",
-    })
+    register_user(client, "Test Manager", "5551110001")
+    r = client.post("/auth/login", json={"phone": "5551110001", "password": "password123"})
     return r.json()["access_token"]
 
 
 @pytest.fixture
 def buyer_token(client):
-    client.post("/auth/register", json={
-        "name": "Test Buyer",
-        "phone": "5552220001",
-        "password": "password123",
-    })
-    r = client.post("/auth/login", json={
-        "phone": "5552220001",
-        "password": "password123",
-    })
+    register_user(client, "Test Buyer", "5552220001")
+    r = client.post("/auth/login", json={"phone": "5552220001", "password": "password123"})
     return r.json()["access_token"]

@@ -5,6 +5,7 @@ from app.models.request import Request, RequestStatus, RequestHistory
 from app.models.contact import Contact
 from app.models.list import List, ListItem
 from app.models.send import Send, SendItemState
+from app.models.verification import PhoneVerification
 
 __all__ = [
     "User",
@@ -13,4 +14,5 @@ __all__ = [
     "Contact",
     "List", "ListItem",
     "Send", "SendItemState",
+    "PhoneVerification",
 ]

@@ -119,11 +119,8 @@ def test_cannot_transition_from_terminal_status(client, manager_token, buyer_tok
 
 def test_user_sees_only_own_requests(client, manager_token):
     """Ownership-based isolation: each user's list contains only their own requests."""
-    client.post("/auth/register", json={
-        "name": "Other User",
-        "phone": "5559990000",
-        "password": "password123",
-    })
+    from tests.conftest import register_user
+    register_user(client, "Other User", "5559990000")
     other_login = client.post("/auth/login", json={
         "phone": "5559990000",
         "password": "password123",
