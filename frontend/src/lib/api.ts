@@ -287,4 +287,17 @@ export async function updateSendItem(
   return data;
 }
 
+export async function markAllReceived(sendId: number): Promise<InboxSend> {
+  const { data } = await api.post<InboxSend>(`/sends/${sendId}/mark-all-received`);
+  return data;
+}
+
+export async function dismissSend(sendId: number): Promise<void> {
+  await api.post(`/sends/${sendId}/dismiss`);
+}
+
+export async function clearInbox(): Promise<void> {
+  await api.post("/inbox/clear");
+}
+
 export default api;

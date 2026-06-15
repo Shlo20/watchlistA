@@ -282,3 +282,86 @@ def test_checkoff_by_third_party_returns_403(client, manager_token, buyer_token)
         headers=auth(third_token),
     )
     assert r.status_code == 403
+
+
+# ─── mark-all-received ────────────────────────────────────────────────────────
+
+def test_mark_all_received(client, manager_token, buyer_token):
+    lst = _make_list(
+        client,
+        manager_token,
+        items=[
+            {"custom_product_name": "Widget", "quantity": 5},
+            {"custom_product_name": "Gadget", "quantity": 2},
+        ],
+    )
+    send_r = client.post(
+        f"/lists/{lst['id']}/send",
+        json={"recipients": [{"phone": "5552220001"}]},
+        headers=auth(manager_token),
+    )
+    send_id = send_r.json()[0]["id"]
+
+    r = client.post(f"/sends/{send_id}/mark-all-received", headers=auth(buyer_token))
+    assert r.status_code == 200
+    result = r.json()
+    assert all(s["checked"] for s in result["item_states"])
+    qty_map = {s["list_item_id"]: s["received_quantity"] for s in result["item_states"]}
+    for item in lst["items"]:
+        assert qty_map[item["id"]] == item["quantity"]
+
+
+# ─── dismiss ──────────────────────────────────────────────────────────────────
+
+def test_dismiss_hides_from_inbox(client, manager_token, buyer_token):
+    lst = _make_list(client, manager_token)
+    send_r = client.post(
+        f"/lists/{lst['id']}/send",
+        json={"recipients": [{"phone": "5552220001"}]},
+        headers=auth(manager_token),
+    )
+    send_id = send_r.json()[0]["id"]
+
+    assert len(client.get("/inbox", headers=auth(buyer_token)).json()) == 1
+    r = client.post(f"/sends/{send_id}/dismiss", headers=auth(buyer_token))
+    assert r.status_code == 204
+    assert client.get("/inbox", headers=auth(buyer_token)).json() == []
+
+
+def test_dismiss_non_destructive(client, manager_token, buyer_token):
+    """Dismissing hides the send from the recipient's inbox but the record still exists."""
+    lst = _make_list(client, manager_token)
+    item_id = lst["items"][0]["id"]
+    send_r = client.post(
+        f"/lists/{lst['id']}/send",
+        json={"recipients": [{"phone": "5552220001"}]},
+        headers=auth(manager_token),
+    )
+    send_id = send_r.json()[0]["id"]
+
+    client.post(f"/sends/{send_id}/dismiss", headers=auth(buyer_token))
+
+    # List owner can still check off items (send record exists)
+    r = client.patch(
+        f"/sends/{send_id}/items/{item_id}",
+        json={"checked": True},
+        headers=auth(manager_token),
+    )
+    assert r.status_code == 200
+
+
+# ─── clear inbox ──────────────────────────────────────────────────────────────
+
+def test_clear_inbox(client, manager_token, buyer_token):
+    for i in range(2):
+        lst = _make_list(client, manager_token, title=f"List {i}")
+        client.post(
+            f"/lists/{lst['id']}/send",
+            json={"recipients": [{"phone": "5552220001"}]},
+            headers=auth(manager_token),
+        )
+
+    assert len(client.get("/inbox", headers=auth(buyer_token)).json()) == 2
+    r = client.post("/inbox/clear", headers=auth(buyer_token))
+    assert r.status_code == 204
+    assert client.get("/inbox", headers=auth(buyer_token)).json() == []
