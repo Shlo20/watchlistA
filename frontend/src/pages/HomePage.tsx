@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import ContactsSection from "@/pages/ContactsSection";
 import ListsSection from "@/pages/ListsSection";
+import InboxSection from "@/pages/InboxSection";
 
 type Section = "lists" | "contacts" | "inbox";
 
@@ -52,11 +53,7 @@ export default function HomePage() {
         <main className="flex-1 overflow-auto">
           {active === "lists" && <ListsSection />}
           {active === "contacts" && <ContactsSection />}
-          {active === "inbox" && (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-muted-foreground">Inbox — coming soon</p>
-            </div>
-          )}
+          {active === "inbox" && <InboxSection />}
         </main>
       </div>
     </div>

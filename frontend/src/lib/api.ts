@@ -244,4 +244,39 @@ export async function sendList(
   return data;
 }
 
+// ---- Inbox ----
+
+export interface SendItemState {
+  list_item_id: number;
+  checked: boolean;
+  received_quantity: number;
+}
+
+export interface InboxSend {
+  id: number;
+  list_id: number;
+  list_title: string | null;
+  sender_name?: string | null;
+  items: ListItem[];
+  item_states: SendItemState[];
+  created_at: string;
+}
+
+export async function getInbox(): Promise<InboxSend[]> {
+  const { data } = await api.get<InboxSend[]>("/inbox");
+  return data;
+}
+
+export async function updateSendItem(
+  sendId: number,
+  listItemId: number,
+  payload: { checked?: boolean; received_quantity?: number }
+): Promise<SendItemState> {
+  const { data } = await api.patch<SendItemState>(
+    `/sends/${sendId}/items/${listItemId}`,
+    payload
+  );
+  return data;
+}
+
 export default api;
