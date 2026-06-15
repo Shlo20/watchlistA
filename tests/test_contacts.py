@@ -155,3 +155,59 @@ def test_delete_contact_not_owned_returns_404(client, manager_token, buyer_token
     assert r.status_code == 404
     # Original contact still exists for its owner
     assert client.get(f"/contacts/{cid}", headers=auth_headers(manager_token)).status_code == 200
+
+
+# ── linked_user_id resolution ─────────────────────────────────────────────────
+
+def test_create_contact_links_registered_user(client, manager_token, buyer_token):
+    """Creating a contact whose phone matches a registered user sets linked_user_id."""
+    # buyer is registered with phone "5552220001" (normalized to "+15552220001")
+    r = client.post(
+        "/contacts",
+        json={"nickname": "Buyer", "phone": "5552220001"},
+        headers=auth_headers(manager_token),
+    )
+    assert r.status_code == 201
+    assert r.json()["linked_user_id"] is not None
+
+
+def test_create_contact_no_link_for_unregistered(client, manager_token):
+    """Creating a contact for an unregistered number leaves linked_user_id null."""
+    r = _create(client, manager_token, phone="6467522092")
+    assert r.status_code == 201
+    assert r.json()["linked_user_id"] is None
+
+
+def test_patch_phone_to_registered_sets_link(client, manager_token, buyer_token):
+    """Patching a contact's phone to a registered user's number sets linked_user_id."""
+    # Start with an unregistered phone
+    cid = _create(client, manager_token, phone="6467522092").json()["id"]
+    assert client.get(f"/contacts/{cid}", headers=auth_headers(manager_token)).json()["linked_user_id"] is None
+
+    r = client.patch(
+        f"/contacts/{cid}",
+        json={"phone": "5552220001"},  # buyer's registered phone
+        headers=auth_headers(manager_token),
+    )
+    assert r.status_code == 200
+    assert r.json()["linked_user_id"] is not None
+
+
+def test_patch_phone_from_registered_clears_link(client, manager_token, buyer_token):
+    """Patching a contact's phone away from a registered number clears linked_user_id."""
+    # Create pointing at the buyer (registered)
+    cid = client.post(
+        "/contacts",
+        json={"nickname": "Buyer", "phone": "5552220001"},
+        headers=auth_headers(manager_token),
+    ).json()["id"]
+    assert client.get(f"/contacts/{cid}", headers=auth_headers(manager_token)).json()["linked_user_id"] is not None
+
+    # Change to an unregistered number
+    r = client.patch(
+        f"/contacts/{cid}",
+        json={"phone": "6467522092"},
+        headers=auth_headers(manager_token),
+    )
+    assert r.status_code == 200
+    assert r.json()["linked_user_id"] is None

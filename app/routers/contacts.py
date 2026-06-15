@@ -42,7 +42,13 @@ def create_contact(
         Contact.owner_user_id == user.id, Contact.phone == phone
     ).first():
         raise HTTPException(status.HTTP_409_CONFLICT, "Contact with this phone already exists")
-    contact = Contact(owner_user_id=user.id, nickname=payload.nickname, phone=phone)
+    linked_user = db.query(User).filter(User.phone == phone).first()
+    contact = Contact(
+        owner_user_id=user.id,
+        nickname=payload.nickname,
+        phone=phone,
+        linked_user_id=linked_user.id if linked_user else None,
+    )
     db.add(contact)
     db.commit()
     db.refresh(contact)
@@ -96,6 +102,9 @@ def update_contact(
         if conflict:
             raise HTTPException(status.HTTP_409_CONFLICT, "Contact with this phone already exists")
         contact.phone = phone
+        # Re-resolve link whenever phone changes
+        linked_user = db.query(User).filter(User.phone == phone).first()
+        contact.linked_user_id = linked_user.id if linked_user else None
     db.commit()
     db.refresh(contact)
     return contact
