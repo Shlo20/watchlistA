@@ -28,3 +28,33 @@ def format_list_body(lst, items) -> str:
         )
         lines.append(f"- {item.quantity}x {name}")
     return "\n".join(lines)
+
+
+def format_priced_body(lst, items, price_map: dict) -> str:
+    """Render a list with unit prices and a running total for a WhatsApp quote.
+
+    price_map: {list_item_id: unit_price_cents | None}
+    Items with no price are included without a price. Total line is added when
+    at least one price is set.
+    """
+    lines = []
+    if lst and lst.title:
+        lines.append(f"*{lst.title}*")
+    total_cents = 0
+    has_prices = False
+    for item in items:
+        name = (
+            (item.product.name if item.product else None)
+            or item.custom_product_name
+            or "Item"
+        )
+        price_cents = price_map.get(item.id)
+        if price_cents is not None:
+            has_prices = True
+            total_cents += price_cents * item.quantity
+            lines.append(f"- {item.quantity}x {name} — ${price_cents / 100:.2f} ea")
+        else:
+            lines.append(f"- {item.quantity}x {name}")
+    if has_prices:
+        lines.append(f"Total: ${total_cents / 100:.2f}")
+    return "\n".join(lines)

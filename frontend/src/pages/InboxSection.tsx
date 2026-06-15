@@ -5,12 +5,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import {
   getInbox,
   updateSendItem,
   markAllReceived,
   dismissSend,
   clearInbox,
+  submitQuote,
+  getQuoteWaLink,
+  centsToDollars,
+  dollarsToCents,
   type InboxSend,
   type SendItemState,
 } from "@/lib/api";
@@ -47,6 +52,7 @@ function getItemState(itemStates: SendItemState[], listItemId: number): SendItem
       list_item_id: listItemId,
       checked: false,
       received_quantity: 0,
+      unit_price_cents: null,
     }
   );
 }
@@ -58,7 +64,7 @@ function applyCheck(send: InboxSend, listItemId: number, checked: boolean): Inbo
     ...send,
     item_states: exists
       ? itemStates.map((s) => (s.list_item_id === listItemId ? { ...s, checked } : s))
-      : [...itemStates, { list_item_id: listItemId, checked, received_quantity: 0 }],
+      : [...itemStates, { list_item_id: listItemId, checked, received_quantity: 0, unit_price_cents: null }],
   };
 }
 
@@ -68,6 +74,11 @@ export default function InboxSection() {
   const [dismissingIds, setDismissingIds] = useState<Set<number>>(new Set());
   const [clearConfirming, setClearConfirming] = useState(false);
   const [clearing, setClearing] = useState(false);
+
+  // Quote pricing state
+  const [quotingIds, setQuotingIds] = useState<Set<number>>(new Set());
+  const [priceInputs, setPriceInputs] = useState<Map<number, Map<number, string>>>(new Map());
+  const [submittingIds, setSubmittingIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     getInbox()
@@ -133,6 +144,71 @@ export default function InboxSection() {
       toast.error("Couldn't clear inbox. Try again.");
     } finally {
       setClearing(false);
+    }
+  }
+
+  function startQuoting(sendId: number) {
+    setQuotingIds((prev) => new Set(prev).add(sendId));
+    setPriceInputs((prev) => {
+      const next = new Map(prev);
+      if (!next.has(sendId)) next.set(sendId, new Map());
+      return next;
+    });
+  }
+
+  function cancelQuoting(sendId: number) {
+    setQuotingIds((prev) => {
+      const next = new Set(prev);
+      next.delete(sendId);
+      return next;
+    });
+  }
+
+  function setPriceInput(sendId: number, listItemId: number, value: string) {
+    setPriceInputs((prev) => {
+      const next = new Map(prev);
+      const inner = new Map(next.get(sendId) ?? []);
+      inner.set(listItemId, value);
+      next.set(sendId, inner);
+      return next;
+    });
+  }
+
+  async function handleSubmitQuote(send: InboxSend) {
+    const inputs = priceInputs.get(send.id) ?? new Map<number, string>();
+
+    // Save prices
+    const patches = send.items.map(async (item) => {
+      const raw = inputs.get(item.id) ?? "";
+      const cents = raw.trim() !== "" ? dollarsToCents(raw) : null;
+      if (cents !== null || raw.trim() !== "") {
+        await updateSendItem(send.id, item.id, { unit_price_cents: cents });
+      }
+    });
+    setSubmittingIds((prev) => new Set(prev).add(send.id));
+    try {
+      await Promise.all(patches);
+      const updated = await submitQuote(send.id);
+      setSends((prev) => prev.map((s) => (s.id === send.id ? updated : s)));
+      cancelQuoting(send.id);
+      toast.success("Quote submitted");
+    } catch {
+      toast.error("Couldn't submit quote. Try again.");
+    } finally {
+      setSubmittingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(send.id);
+        return next;
+      });
+    }
+  }
+
+  async function handleShareQuoteWa(sendId: number) {
+    try {
+      const link = await getQuoteWaLink(sendId);
+      window.open(link, "_blank");
+    } catch {
+      toast.error("Couldn't get WhatsApp link.");
     }
   }
 
@@ -215,6 +291,37 @@ export default function InboxSection() {
             const progress = total > 0 ? (checkedCount / total) * 100 : 0;
             const allDone = total > 0 && checkedCount === total;
             const dismissing = dismissingIds.has(send.id);
+            const isQuoting = quotingIds.has(send.id);
+            const isSubmitting = submittingIds.has(send.id);
+            const alreadyQuoted = send.quoted_at !== null;
+            const inputs = priceInputs.get(send.id) ?? new Map<number, string>();
+
+            // Running total from current inputs
+            let runningCents = 0;
+            let hasAnyPrice = false;
+            if (isQuoting) {
+              for (const item of items) {
+                const raw = inputs.get(item.id) ?? "";
+                if (raw.trim() !== "") {
+                  const c = dollarsToCents(raw);
+                  if (c !== null) {
+                    runningCents += c * item.quantity;
+                    hasAnyPrice = true;
+                  }
+                }
+              }
+            }
+
+            // Already-submitted quote total from server state
+            let submittedTotal = 0;
+            if (alreadyQuoted) {
+              for (const state of itemStates) {
+                if (state.unit_price_cents !== null) {
+                  const item = items.find((i) => i.id === state.list_item_id);
+                  if (item) submittedTotal += state.unit_price_cents * item.quantity;
+                }
+              }
+            }
 
             return (
               <div
@@ -263,7 +370,62 @@ export default function InboxSection() {
                   <CardContent className="pt-0 pb-3">
                     {items.length === 0 ? (
                       <p className="text-sm text-muted-foreground py-2">No items.</p>
+                    ) : isQuoting ? (
+                      /* ── Pricing mode ── */
+                      <div className="space-y-2">
+                        <ul className="space-y-1">
+                          {items.map((item) => {
+                            const name = item.product_name ?? item.custom_product_name ?? "Item";
+                            return (
+                              <li key={item.id} className="flex items-center gap-2 px-1">
+                                <span className="text-sm flex-1 min-w-0 truncate">
+                                  {item.quantity}× {name}
+                                </span>
+                                <div className="relative w-24 shrink-0">
+                                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">
+                                    $
+                                  </span>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    placeholder="0.00"
+                                    value={inputs.get(item.id) ?? ""}
+                                    onChange={(e) => setPriceInput(send.id, item.id, e.target.value)}
+                                    className="pl-6 h-8 text-sm"
+                                  />
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                        {hasAnyPrice && (
+                          <p className="text-sm font-semibold text-right px-1">
+                            Total: ${centsToDollars(runningCents)}
+                          </p>
+                        )}
+                        <div className="flex gap-2 pt-1 border-t border-border/50">
+                          <Button
+                            size="sm"
+                            onClick={() => handleSubmitQuote(send)}
+                            disabled={isSubmitting}
+                            className="h-8 text-xs flex-1"
+                          >
+                            {isSubmitting ? "Submitting…" : "Submit quote"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => cancelQuoting(send.id)}
+                            disabled={isSubmitting}
+                            className="h-8 text-xs"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
                     ) : (
+                      /* ── Normal / submitted mode ── */
                       <>
                         <ul className="space-y-0.5">
                           {items.map((item) => {
@@ -292,7 +454,7 @@ export default function InboxSection() {
                                   />
                                   <span
                                     className={[
-                                      "text-sm font-medium transition-colors",
+                                      "text-sm font-medium transition-colors flex-1 min-w-0 truncate",
                                       state.checked
                                         ? "line-through text-muted-foreground"
                                         : "",
@@ -300,20 +462,56 @@ export default function InboxSection() {
                                   >
                                     {label}
                                   </span>
+                                  {state.unit_price_cents !== null && (
+                                    <span className="text-xs text-muted-foreground shrink-0">
+                                      ${centsToDollars(state.unit_price_cents)} ea
+                                    </span>
+                                  )}
                                 </button>
                               </li>
                             );
                           })}
                         </ul>
-                        {!allDone && (
-                          <div className="pt-2 border-t border-border/50 mt-2">
+
+                        {alreadyQuoted ? (
+                          /* Submitted quote banner */
+                          <div className="pt-2 border-t border-border/50 mt-2 space-y-2">
+                            <div className="flex items-center justify-between px-1">
+                              <span className="text-xs text-muted-foreground">Quote sent</span>
+                              {submittedTotal > 0 && (
+                                <span className="text-sm font-semibold">
+                                  ${centsToDollars(submittedTotal)}
+                                </span>
+                              )}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleShareQuoteWa(send.id)}
+                              className="h-8 text-xs w-full"
+                            >
+                              Send via WhatsApp
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="pt-2 border-t border-border/50 mt-2 flex gap-2">
+                            {!allDone && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleMarkAll(send.id)}
+                                className="h-8 text-xs text-muted-foreground hover:text-foreground flex-1"
+                              >
+                                Mark all received
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               variant="ghost"
-                              onClick={() => handleMarkAll(send.id)}
-                              className="h-8 text-xs text-muted-foreground hover:text-foreground w-full"
+                              onClick={() => startQuoting(send.id)}
+                              className="h-8 text-xs text-muted-foreground hover:text-foreground flex-1"
                             >
-                              Mark all received
+                              Create quote
                             </Button>
                           </div>
                         )}

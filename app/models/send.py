@@ -35,6 +35,9 @@ class Send(Base):
     deliver_to_inbox: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="1"
     )
+    quoted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     item_states = relationship(
         "SendItemState",
@@ -60,6 +63,7 @@ class SendItemState(Base):
     )
     checked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     received_quantity: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    unit_price_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

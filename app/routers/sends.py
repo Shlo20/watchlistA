@@ -1,4 +1,4 @@
-"""Inbox and item check-off endpoints."""
+"""Inbox, item check-off, and quote endpoints."""
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -11,10 +11,12 @@ from app.models.send import Send, SendItemState
 from app.models.user import User
 from app.schemas.send import (
     InboxSendOut,
+    QuoteWaLinkOut,
     SendItemStateOut,
     SendItemStateUpdate,
     build_inbox_send_out,
 )
+from app.services.whatsapp import build_wa_link, format_priced_body
 
 
 router = APIRouter(tags=["sends"])
@@ -155,6 +157,8 @@ def check_off_item(
         state.checked = payload.checked
     if "received_quantity" in payload.model_fields_set:
         state.received_quantity = payload.received_quantity
+    if "unit_price_cents" in payload.model_fields_set:
+        state.unit_price_cents = payload.unit_price_cents
 
     db.commit()
     db.refresh(state)
@@ -162,4 +166,52 @@ def check_off_item(
         list_item_id=state.list_item_id,
         checked=state.checked,
         received_quantity=state.received_quantity,
+        unit_price_cents=state.unit_price_cents,
     )
+
+
+@router.post("/sends/{send_id}/submit-quote", response_model=InboxSendOut)
+def submit_quote(
+    send_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Recipient marks their priced quote as submitted. Sets quoted_at = now."""
+    send = _load_send_full(db, send_id)
+    if not send:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Send not found")
+    if send.recipient_user_id != user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the recipient can submit a quote")
+    send.quoted_at = datetime.now(timezone.utc)
+    db.commit()
+    send = _load_send_full(db, send_id)
+    return build_inbox_send_out(send)
+
+
+@router.get("/sends/{send_id}/quote-wa-link", response_model=QuoteWaLinkOut)
+def get_quote_wa_link(
+    send_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Return a priced wa.me link for the quote.
+
+    Supplier (recipient) → link points to the list owner's phone.
+    Owner → link points to the supplier's phone.
+    Body includes unit prices and a running total.
+    """
+    send = _load_send_full(db, send_id)
+    if not send:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Send not found")
+
+    lst = send.parent_list
+    is_recipient = send.recipient_user_id == user.id
+    is_owner = lst is not None and lst.owner_user_id == user.id
+    if not is_recipient and not is_owner:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized")
+
+    target_phone = send.sender.phone if is_recipient else send.recipient_phone
+
+    price_map = {s.list_item_id: s.unit_price_cents for s in send.item_states}
+    body = format_priced_body(lst, lst.items if lst else [], price_map)
+    return QuoteWaLinkOut(wa_link=build_wa_link(target_phone, body))

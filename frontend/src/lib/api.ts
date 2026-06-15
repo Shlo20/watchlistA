@@ -254,6 +254,7 @@ export interface SendItemState {
   list_item_id: number;
   checked: boolean;
   received_quantity: number;
+  unit_price_cents: number | null;
 }
 
 export interface InboxListItem {
@@ -272,6 +273,22 @@ export interface InboxSend {
   items: InboxListItem[];
   item_states: SendItemState[];
   created_at: string;
+  quoted_at: string | null;
+}
+
+export interface QuoteItem {
+  list_item_id: number;
+  name: string;
+  quantity: number;
+  unit_price_cents: number | null;
+}
+
+export interface Quote {
+  send_id: number;
+  supplier_name: string | null;
+  quoted_at: string;
+  items: QuoteItem[];
+  total_cents: number;
 }
 
 export async function getInbox(): Promise<InboxSend[]> {
@@ -282,7 +299,7 @@ export async function getInbox(): Promise<InboxSend[]> {
 export async function updateSendItem(
   sendId: number,
   listItemId: number,
-  payload: { checked?: boolean; received_quantity?: number }
+  payload: { checked?: boolean; received_quantity?: number; unit_price_cents?: number | null }
 ): Promise<SendItemState> {
   const { data } = await api.patch<SendItemState>(
     `/sends/${sendId}/items/${listItemId}`,
@@ -302,6 +319,31 @@ export async function dismissSend(sendId: number): Promise<void> {
 
 export async function clearInbox(): Promise<void> {
   await api.post("/inbox/clear");
+}
+
+export async function submitQuote(sendId: number): Promise<InboxSend> {
+  const { data } = await api.post<InboxSend>(`/sends/${sendId}/submit-quote`);
+  return data;
+}
+
+export async function getListQuotes(listId: number): Promise<Quote[]> {
+  const { data } = await api.get<Quote[]>(`/lists/${listId}/quotes`);
+  return data;
+}
+
+export async function getQuoteWaLink(sendId: number): Promise<string> {
+  const { data } = await api.get<{ wa_link: string }>(`/sends/${sendId}/quote-wa-link`);
+  return data.wa_link;
+}
+
+export function centsToDollars(cents: number): string {
+  return (cents / 100).toFixed(2);
+}
+
+export function dollarsToCents(value: string): number | null {
+  const n = parseFloat(value);
+  if (isNaN(n) || n < 0) return null;
+  return Math.round(n * 100);
 }
 
 // ---- Profile ----

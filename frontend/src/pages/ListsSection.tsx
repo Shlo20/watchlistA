@@ -22,9 +22,13 @@ import {
   sendList,
   listContacts,
   searchProducts,
+  getListQuotes,
+  getQuoteWaLink,
+  centsToDollars,
   type WatchList,
   type Contact,
   type Product,
+  type Quote,
   type SendRecipient,
 } from "@/lib/api";
 
@@ -72,19 +76,31 @@ export default function ListsSection() {
   const [sending, setSending] = useState(false);
   const [sendResults, setSendResults] = useState<SendResult[] | null>(null);
 
+  // Quotes state
+  const [quotesMap, setQuotesMap] = useState<Map<number, Quote[]>>(new Map());
+
   // ---- load lists on mount ----
 
   useEffect(() => {
     listLists()
-      .then((data) =>
-        setLists(
-          [...data].sort(
-            (a, b) =>
-              new Date(b.created_at).getTime() -
-              new Date(a.created_at).getTime()
+      .then((data) => {
+        const sorted = [...data].sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() -
+            new Date(a.created_at).getTime()
+        );
+        setLists(sorted);
+        // Fetch quotes for each list
+        Promise.all(
+          sorted.map((l) =>
+            getListQuotes(l.id)
+              .then((qs) => [l.id, qs] as [number, Quote[]])
+              .catch(() => [l.id, []] as [number, Quote[]])
           )
-        )
-      )
+        ).then((entries) => {
+          setQuotesMap(new Map(entries));
+        });
+      })
       .catch(() => toast.error("Couldn't load lists."))
       .finally(() => setListsLoading(false));
   }, []);
@@ -192,6 +208,15 @@ export default function ListsSection() {
       toast.success("List deleted");
     } catch {
       toast.error("Couldn't delete. Try again.");
+    }
+  }
+
+  async function handleShareQuoteWa(sendId: number) {
+    try {
+      const link = await getQuoteWaLink(sendId);
+      window.open(link, "_blank");
+    } catch {
+      toast.error("Couldn't get WhatsApp link.");
     }
   }
 
@@ -318,38 +343,72 @@ export default function ListsSection() {
                 </div>
               ) : (
                 <ul className="divide-y">
-                  {lists.map((list) => (
-                    <li
-                      key={list.id}
-                      className="flex items-center gap-3 py-3 min-h-[52px]"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">
-                          {list.title}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {list.items.length} item
-                          {list.items.length === 1 ? "" : "s"}
-                        </p>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => openSendDialog(list)}
-                      >
-                        <Send className="size-3 mr-1" />
-                        Send
-                      </Button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteList(list.id)}
-                        className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
-                        aria-label="Delete list"
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
-                    </li>
-                  ))}
+                  {lists.map((list) => {
+                    const quotes = quotesMap.get(list.id) ?? [];
+                    return (
+                      <li key={list.id} className="py-3">
+                        <div className="flex items-center gap-3 min-h-[52px]">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">
+                              {list.title}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {list.items.length} item
+                              {list.items.length === 1 ? "" : "s"}
+                            </p>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openSendDialog(list)}
+                          >
+                            <Send className="size-3 mr-1" />
+                            Send
+                          </Button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteList(list.id)}
+                            className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
+                            aria-label="Delete list"
+                          >
+                            <Trash2 className="size-4" />
+                          </button>
+                        </div>
+                        {quotes.length > 0 && (
+                          <div className="mt-1 space-y-1.5 border-t border-border/40 pt-2">
+                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                              Quotes
+                            </p>
+                            {quotes.map((q) => (
+                              <div
+                                key={q.send_id}
+                                className="flex items-center justify-between gap-2 rounded-md bg-muted/50 px-3 py-2"
+                              >
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium truncate">
+                                    {q.supplier_name ?? "Supplier"}
+                                  </p>
+                                  {q.total_cents > 0 && (
+                                    <p className="text-xs text-muted-foreground">
+                                      Total: ${centsToDollars(q.total_cents)}
+                                    </p>
+                                  )}
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleShareQuoteWa(q.send_id)}
+                                  className="h-8 text-xs shrink-0 text-green-400 hover:text-green-300 hover:bg-green-500/10"
+                                >
+                                  Share via WhatsApp
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </CardContent>

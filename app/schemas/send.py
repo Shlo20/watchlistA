@@ -32,11 +32,13 @@ class SendItemStateOut(BaseModel):
     list_item_id: int
     checked: bool
     received_quantity: int | None
+    unit_price_cents: int | None = None
 
 
 class SendItemStateUpdate(BaseModel):
     checked: bool | None = None
     received_quantity: int | None = None
+    unit_price_cents: int | None = None
 
 
 class SendOut(BaseModel):
@@ -67,6 +69,26 @@ class InboxSendOut(BaseModel):
     items: list[InboxItemOut]
     item_states: list[SendItemStateOut]
     created_at: datetime
+    quoted_at: datetime | None = None
+
+
+class QuoteItemOut(BaseModel):
+    list_item_id: int
+    name: str
+    quantity: int
+    unit_price_cents: int | None
+
+
+class QuoteOut(BaseModel):
+    send_id: int
+    supplier_name: str | None
+    quoted_at: datetime
+    items: list[QuoteItemOut]
+    total_cents: int
+
+
+class QuoteWaLinkOut(BaseModel):
+    wa_link: str
 
 
 def build_inbox_send_out(send) -> InboxSendOut:
@@ -92,10 +114,12 @@ def build_inbox_send_out(send) -> InboxSendOut:
                 list_item_id=s.list_item_id,
                 checked=s.checked,
                 received_quantity=s.received_quantity,
+                unit_price_cents=s.unit_price_cents,
             )
             for s in send.item_states
         ],
         created_at=send.created_at,
+        quoted_at=send.quoted_at,
     )
 
 
@@ -115,6 +139,7 @@ def build_send_out(send, wa_link: str | None = None) -> SendOut:
                 list_item_id=s.list_item_id,
                 checked=s.checked,
                 received_quantity=s.received_quantity,
+                unit_price_cents=s.unit_price_cents,
             )
             for s in send.item_states
         ],

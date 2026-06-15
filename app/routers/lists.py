@@ -2,7 +2,7 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
@@ -12,7 +12,7 @@ from app.models.list import List, ListItem
 from app.models.send import Send, SendItemState
 from app.models.user import User
 from app.schemas.list import ListCreate, ListOut, ListUpdate
-from app.schemas.send import SendCreate, SendOut, build_send_out
+from app.schemas.send import QuoteItemOut, QuoteOut, SendCreate, SendOut, build_send_out
 from app.services.whatsapp import build_wa_link, format_list_body
 
 
@@ -169,6 +169,53 @@ def send_list(
         wa_link = build_wa_link(phone, format_list_body(lst, lst.items)) if do_whatsapp else None
         results.append(build_send_out(send, wa_link=wa_link))
 
+    return results
+
+
+@router.get("/{list_id}/quotes", response_model=list[QuoteOut])
+def get_list_quotes(
+    list_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Return all submitted quotes for a list the caller owns."""
+    lst = _get_owned_list(list_id, user, db)
+    sends = (
+        db.query(Send)
+        .filter(Send.list_id == list_id, Send.quoted_at.isnot(None))
+        .options(
+            joinedload(Send.sender),
+            joinedload(Send.item_states),
+            joinedload(Send.parent_list).joinedload(List.items).joinedload(ListItem.product),
+        )
+        .order_by(Send.quoted_at.desc())
+        .all()
+    )
+
+    results: list[QuoteOut] = []
+    for send in sends:
+        state_map: dict[int, SendItemState] = {s.list_item_id: s for s in send.item_states}
+        items_out: list[QuoteItemOut] = []
+        total_cents = 0
+        for item in lst.items:
+            s = state_map.get(item.id)
+            name = (item.product.name if item.product else None) or item.custom_product_name or "Item"
+            price = s.unit_price_cents if s else None
+            items_out.append(QuoteItemOut(
+                list_item_id=item.id,
+                name=name,
+                quantity=item.quantity,
+                unit_price_cents=price,
+            ))
+            if price is not None:
+                total_cents += price * item.quantity
+        results.append(QuoteOut(
+            send_id=send.id,
+            supplier_name=send.sender.name if send.sender else None,
+            quoted_at=send.quoted_at,
+            items=items_out,
+            total_cents=total_cents,
+        ))
     return results
 
 
