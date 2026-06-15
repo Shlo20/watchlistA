@@ -60,7 +60,10 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
     synced_sends = (
         db.query(Send)
         .filter(Send.recipient_phone == phone, Send.recipient_user_id == None)  # noqa: E711
-        .update({"recipient_user_id": user.id}, synchronize_session=False)
+        .update(
+            {"recipient_user_id": user.id, "deliver_to_inbox": True},
+            synchronize_session=False,
+        )
     )
     db.query(Contact).filter(
         Contact.phone == phone,

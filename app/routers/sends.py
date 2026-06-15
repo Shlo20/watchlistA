@@ -41,7 +41,11 @@ def inbox(
     """All non-dismissed sends where the current user is the recipient, newest first."""
     sends = (
         db.query(Send)
-        .filter(Send.recipient_user_id == user.id, Send.dismissed_at.is_(None))
+        .filter(
+            Send.recipient_user_id == user.id,
+            Send.dismissed_at.is_(None),
+            Send.deliver_to_inbox == True,  # noqa: E712
+        )
         .options(
             joinedload(Send.parent_list).joinedload(List.items).joinedload(ListItem.product),
             joinedload(Send.sender),

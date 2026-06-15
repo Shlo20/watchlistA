@@ -365,3 +365,66 @@ def test_clear_inbox(client, manager_token, buyer_token):
     r = client.post("/inbox/clear", headers=auth(buyer_token))
     assert r.status_code == 204
     assert client.get("/inbox", headers=auth(buyer_token)).json() == []
+
+
+# ─── per-recipient delivery channels ─────────────────────────────────────────
+
+def test_channel_inbox_only_registered(client, manager_token, buyer_token):
+    """Registered + inbox only → appears in inbox, no wa_link."""
+    lst = _make_list(client, manager_token)
+    r = client.post(
+        f"/lists/{lst['id']}/send",
+        json={"recipients": [{"phone": "5552220001", "to_inbox": True, "to_whatsapp": False}]},
+        headers=auth(manager_token),
+    )
+    assert r.status_code == 201
+    send = r.json()[0]
+    assert send["deliver_to_inbox"] is True
+    assert send["wa_link"] is None
+
+    inbox = client.get("/inbox", headers=auth(buyer_token)).json()
+    assert any(s["id"] == send["id"] for s in inbox)
+
+
+def test_channel_inbox_and_whatsapp_registered(client, manager_token, buyer_token):
+    """Registered + inbox+whatsapp → appears in inbox AND returns wa_link."""
+    lst = _make_list(client, manager_token)
+    r = client.post(
+        f"/lists/{lst['id']}/send",
+        json={"recipients": [{"phone": "5552220001", "to_inbox": True, "to_whatsapp": True}]},
+        headers=auth(manager_token),
+    )
+    assert r.status_code == 201
+    send = r.json()[0]
+    assert send["deliver_to_inbox"] is True
+    assert send["wa_link"] is not None
+    assert "wa.me" in send["wa_link"]
+
+    inbox = client.get("/inbox", headers=auth(buyer_token)).json()
+    assert any(s["id"] == send["id"] for s in inbox)
+
+
+def test_channel_whatsapp_only_unregistered(client, manager_token):
+    """Unregistered + whatsapp → wa_link returned, deliver_to_inbox False."""
+    lst = _make_list(client, manager_token)
+    r = client.post(
+        f"/lists/{lst['id']}/send",
+        json={"recipients": [{"phone": "6467522092", "to_whatsapp": True}]},
+        headers=auth(manager_token),
+    )
+    assert r.status_code == 201
+    send = r.json()[0]
+    assert send["deliver_to_inbox"] is False
+    assert send["wa_link"] is not None
+    assert "wa.me" in send["wa_link"]
+
+
+def test_channel_inbox_for_unregistered_returns_422(client, manager_token):
+    """Unregistered requesting inbox → 422."""
+    lst = _make_list(client, manager_token)
+    r = client.post(
+        f"/lists/{lst['id']}/send",
+        json={"recipients": [{"phone": "6467522092", "to_inbox": True}]},
+        headers=auth(manager_token),
+    )
+    assert r.status_code == 422

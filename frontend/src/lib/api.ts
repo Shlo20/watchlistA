@@ -229,10 +229,13 @@ export interface SendOut {
   list_id: number;
   recipient_user_id: number | null;
   wa_link: string | null;
+  deliver_to_inbox: boolean;
   created_at: string;
 }
 
-export type SendRecipient = { contact_id: number } | { phone: string };
+export type SendRecipient =
+  | { contact_id: number; to_inbox?: boolean; to_whatsapp?: boolean }
+  | { phone: string; to_inbox?: boolean; to_whatsapp?: boolean };
 
 export async function sendList(
   listId: number,

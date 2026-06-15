@@ -7,6 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class RecipientIn(BaseModel):
     contact_id: int | None = None
     phone: str | None = None  # raw input, normalised in the handler
+    # None = smart default: registered→inbox, unregistered→whatsapp
+    to_inbox: bool | None = None
+    to_whatsapp: bool | None = None
 
     @model_validator(mode="after")
     def require_exactly_one(self) -> "RecipientIn":
@@ -44,6 +47,7 @@ class SendOut(BaseModel):
     contact_id: int | None
     created_at: datetime
     wa_link: str | None
+    deliver_to_inbox: bool
     item_states: list[SendItemStateOut]
 
 
@@ -105,6 +109,7 @@ def build_send_out(send, wa_link: str | None = None) -> SendOut:
         contact_id=send.contact_id,
         created_at=send.created_at,
         wa_link=wa_link,
+        deliver_to_inbox=send.deliver_to_inbox,
         item_states=[
             SendItemStateOut(
                 list_item_id=s.list_item_id,

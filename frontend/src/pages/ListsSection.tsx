@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Minus, Plus, X, Send, Trash2, ListChecks } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,10 +38,12 @@ type DraftItem = {
   displayName: string;
 };
 
+type ContactChannels = { inbox: boolean; whatsapp: boolean };
+
 type SendResult = {
   label: string;
   waLink: string | null;
-  inSystem: boolean;
+  deliveredToInbox: boolean;
 };
 
 export default function ListsSection() {
@@ -63,9 +66,8 @@ export default function ListsSection() {
   const [activeSendList, setActiveSendList] = useState<WatchList | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsLoading, setContactsLoading] = useState(false);
-  const [selectedContactIds, setSelectedContactIds] = useState<Set<number>>(
-    new Set()
-  );
+  // Maps contact id → chosen channels; being in the map means the contact is selected
+  const [contactChannels, setContactChannels] = useState<Map<number, ContactChannels>>(new Map());
   const [rawPhone, setRawPhone] = useState("");
   const [sending, setSending] = useState(false);
   const [sendResults, setSendResults] = useState<SendResult[] | null>(null);
@@ -197,24 +199,37 @@ export default function ListsSection() {
 
   function openSendDialog(list: WatchList) {
     setActiveSendList(list);
-    setSelectedContactIds(new Set());
+    setContactChannels(new Map());
     setRawPhone("");
     setSendResults(null);
   }
 
   function closeSendDialog() {
     setActiveSendList(null);
-    setSelectedContactIds(new Set());
+    setContactChannels(new Map());
     setRawPhone("");
     setSendResults(null);
     setSending(false);
   }
 
-  function toggleContact(id: number) {
-    setSelectedContactIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+  function toggleContact(id: number, isRegistered: boolean) {
+    setContactChannels((prev) => {
+      const next = new Map(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        // Registered: inbox on by default; unregistered: whatsapp only
+        next.set(id, isRegistered ? { inbox: true, whatsapp: false } : { inbox: false, whatsapp: true });
+      }
+      return next;
+    });
+  }
+
+  function toggleWhatsApp(contactId: number) {
+    setContactChannels((prev) => {
+      const next = new Map(prev);
+      const ch = next.get(contactId);
+      if (ch) next.set(contactId, { ...ch, whatsapp: !ch.whatsapp });
       return next;
     });
   }
@@ -222,19 +237,18 @@ export default function ListsSection() {
   async function handleSend() {
     if (!activeSendList) return;
 
-    const recipientInputs: Array<{ label: string; payload: SendRecipient }> =
-      [];
-    for (const id of selectedContactIds) {
+    const recipientInputs: Array<{ label: string; payload: SendRecipient }> = [];
+    for (const [id, channels] of contactChannels.entries()) {
       const contact = contacts.find((c) => c.id === id);
       recipientInputs.push({
         label: contact?.nickname ?? `Contact #${id}`,
-        payload: { contact_id: id },
+        payload: { contact_id: id, to_inbox: channels.inbox, to_whatsapp: channels.whatsapp },
       });
     }
     if (rawPhone.trim()) {
       recipientInputs.push({
         label: rawPhone.trim(),
-        payload: { phone: rawPhone.trim() },
+        payload: { phone: rawPhone.trim(), to_inbox: false, to_whatsapp: true },
       });
     }
 
@@ -253,7 +267,7 @@ export default function ListsSection() {
       const mapped: SendResult[] = results.map((r, i) => ({
         label: recipientInputs[i]?.label ?? `Recipient ${i + 1}`,
         waLink: r.wa_link,
-        inSystem: r.recipient_user_id !== null,
+        deliveredToInbox: r.deliver_to_inbox,
       }));
       setSendResults(mapped);
 
@@ -545,20 +559,23 @@ export default function ListsSection() {
                     className="flex items-center justify-between gap-3 py-2.5"
                   >
                     <span className="text-sm truncate flex-1">{r.label}</span>
-                    {r.waLink ? (
-                      <a
-                        href={r.waLink}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="shrink-0 text-sm font-medium text-green-400 hover:text-green-300 hover:underline"
-                      >
-                        Open WhatsApp
-                      </a>
-                    ) : (
-                      <span className="shrink-0 text-sm text-muted-foreground">
-                        Delivered to inbox
-                      </span>
-                    )}
+                    <div className="flex flex-col items-end gap-0.5 shrink-0">
+                      {r.deliveredToInbox && (
+                        <span className="text-xs text-muted-foreground">
+                          Delivered to inbox
+                        </span>
+                      )}
+                      {r.waLink && (
+                        <a
+                          href={r.waLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-medium text-green-400 hover:text-green-300 hover:underline"
+                        >
+                          Open WhatsApp
+                        </a>
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -576,27 +593,58 @@ export default function ListsSection() {
                 <div>
                   <p className="text-sm font-medium mb-2">Contacts</p>
                   <ul className="space-y-0.5 max-h-52 overflow-y-auto">
-                    {contacts.map((c) => (
-                      <li
-                        key={c.id}
-                        className="flex items-center gap-3 py-2 min-h-[40px]"
-                      >
-                        <Checkbox
-                          id={`send-contact-${c.id}`}
-                          checked={selectedContactIds.has(c.id)}
-                          onCheckedChange={() => toggleContact(c.id)}
-                        />
-                        <label
-                          htmlFor={`send-contact-${c.id}`}
-                          className="flex-1 text-sm cursor-pointer select-none"
-                        >
-                          <span className="font-medium">{c.nickname}</span>
-                          <span className="text-muted-foreground ml-2 text-xs">
-                            {c.phone}
-                          </span>
-                        </label>
-                      </li>
-                    ))}
+                    {contacts.map((c) => {
+                      const isRegistered = c.linked_user_id !== null;
+                      const selected = contactChannels.has(c.id);
+                      const channels = contactChannels.get(c.id);
+                      return (
+                        <li key={c.id}>
+                          <div className="flex items-center gap-3 py-2 min-h-[40px]">
+                            <Checkbox
+                              id={`send-contact-${c.id}`}
+                              checked={selected}
+                              onCheckedChange={() => toggleContact(c.id, isRegistered)}
+                            />
+                            <label
+                              htmlFor={`send-contact-${c.id}`}
+                              className="flex-1 text-sm cursor-pointer select-none"
+                            >
+                              <span className="font-medium">{c.nickname}</span>
+                              <span className="text-muted-foreground ml-2 text-xs">
+                                {c.phone}
+                              </span>
+                            </label>
+                          </div>
+                          {selected && (
+                            <div className="ml-8 mb-1.5 flex items-center gap-1.5 text-xs">
+                              {isRegistered ? (
+                                <>
+                                  <span className="px-1.5 py-0.5 rounded bg-primary/15 text-primary font-medium">
+                                    Inbox
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleWhatsApp(c.id)}
+                                    className={cn(
+                                      "px-1.5 py-0.5 rounded border transition-colors",
+                                      channels?.whatsapp
+                                        ? "bg-green-500/15 border-green-500/30 text-green-400"
+                                        : "border-border text-muted-foreground hover:text-foreground"
+                                    )}
+                                  >
+                                    {channels?.whatsapp ? "WhatsApp ✓" : "+ WhatsApp"}
+                                  </button>
+                                </>
+                              ) : (
+                                <span className="text-muted-foreground">
+                                  WhatsApp only · not on app
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               ) : (
@@ -606,9 +654,7 @@ export default function ListsSection() {
               )}
 
               <div className="space-y-1.5">
-                <Label htmlFor="send-raw-phone">
-                  Or enter a phone number
-                </Label>
+                <Label htmlFor="send-raw-phone">Or enter a phone number</Label>
                 <Input
                   id="send-raw-phone"
                   type="tel"
@@ -616,6 +662,11 @@ export default function ListsSection() {
                   value={rawPhone}
                   onChange={(e) => setRawPhone(e.target.value)}
                 />
+                {rawPhone.trim() && (
+                  <p className="text-xs text-muted-foreground">
+                    WhatsApp only — unregistered number
+                  </p>
+                )}
               </div>
 
               <DialogFooter>
@@ -625,7 +676,7 @@ export default function ListsSection() {
                 <Button
                   disabled={
                     sending ||
-                    (selectedContactIds.size === 0 && !rawPhone.trim())
+                    (contactChannels.size === 0 && !rawPhone.trim())
                   }
                   onClick={handleSend}
                 >

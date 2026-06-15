@@ -32,6 +32,9 @@ class Send(Base):
     dismissed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    deliver_to_inbox: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="1"
+    )
 
     item_states = relationship(
         "SendItemState",

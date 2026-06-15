@@ -128,12 +128,28 @@ def send_list(
         recipient_user = db.query(User).filter(User.phone == phone).first()
         recipient_user_id = recipient_user.id if recipient_user else None
 
+        # Resolve effective channels
+        if recipient_user_id is None:
+            # Unregistered: inbox is impossible — reject explicit request for it
+            if recipient_in.to_inbox is True:
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    f"Cannot deliver to inbox: {phone} is not a registered user",
+                )
+            deliver_to_inbox = False
+            do_whatsapp = True  # only option for unregistered; always produce wa_link
+        else:
+            # Registered: inbox on by default, whatsapp off by default
+            deliver_to_inbox = recipient_in.to_inbox if recipient_in.to_inbox is not None else True
+            do_whatsapp = recipient_in.to_whatsapp if recipient_in.to_whatsapp is not None else False
+
         send = Send(
             list_id=lst.id,
             sender_user_id=user.id,
             recipient_phone=phone,
             recipient_user_id=recipient_user_id,
             contact_id=contact_id,
+            deliver_to_inbox=deliver_to_inbox,
         )
         db.add(send)
         db.flush()  # populate send.id before inserting states
@@ -144,10 +160,7 @@ def send_list(
         db.commit()
         db.refresh(send)
 
-        wa_link = None
-        if recipient_user_id is None:
-            wa_link = build_wa_link(phone, format_list_body(lst, lst.items))
-
+        wa_link = build_wa_link(phone, format_list_body(lst, lst.items)) if do_whatsapp else None
         results.append(build_send_out(send, wa_link=wa_link))
 
     return results
