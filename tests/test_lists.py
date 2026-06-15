@@ -1,4 +1,5 @@
 """Tests for /lists CRUD endpoints."""
+import re
 
 
 def auth(token):
@@ -12,6 +13,41 @@ def _create_list(client, token, title="Shopping", items=None):
 
 
 # ── create ────────────────────────────────────────────────────────────────────
+
+def test_create_list_blank_title_gets_date_name(client, manager_token):
+    """No title → backend auto-names 'Restock — Mon D'."""
+    r = client.post(
+        "/lists",
+        json={"items": [{"custom_product_name": "Widget", "quantity": 1}]},
+        headers=auth(manager_token),
+    )
+    assert r.status_code == 201
+    title = r.json()["title"]
+    assert title is not None
+    assert re.match(r"^Restock — [A-Z][a-z]{2} \d{1,2}$", title), f"Unexpected title: {title!r}"
+
+
+def test_create_list_whitespace_title_gets_date_name(client, manager_token):
+    """Whitespace-only title is treated as blank and gets the auto-name."""
+    r = client.post(
+        "/lists",
+        json={"title": "   ", "items": [{"custom_product_name": "Widget", "quantity": 1}]},
+        headers=auth(manager_token),
+    )
+    assert r.status_code == 201
+    assert r.json()["title"].startswith("Restock —")
+
+
+def test_create_list_explicit_title_is_kept(client, manager_token):
+    """User-supplied title is stored as-is, never overwritten."""
+    r = client.post(
+        "/lists",
+        json={"title": "My Custom List", "items": [{"custom_product_name": "Widget", "quantity": 1}]},
+        headers=auth(manager_token),
+    )
+    assert r.status_code == 201
+    assert r.json()["title"] == "My Custom List"
+
 
 def test_create_list(client, manager_token):
     r = _create_list(client, manager_token)

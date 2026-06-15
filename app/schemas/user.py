@@ -23,7 +23,13 @@ class UserOut(BaseModel):
     name: str
     phone: str
     plan: str
+    business_name: str | None
     created_at: datetime
+
+
+class UserUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    business_name: str | None = Field(default=None, max_length=200)
 
 
 class LoginRequest(BaseModel):

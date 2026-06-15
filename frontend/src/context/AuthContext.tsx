@@ -7,6 +7,7 @@ interface AuthContextValue {
   user: User | null;
   login: (phone: string, password: string) => Promise<void>;
   logout: () => void;
+  updateUser: (updated: User) => void;
   isAuthenticated: boolean;
 }
 
@@ -38,9 +39,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }
 
+  function updateUser(updated: User) {
+    const token = getStoredToken() ?? "";
+    saveAuth(token, updated);
+    setUser(updated);
+  }
+
   return (
     <AuthContext.Provider
-      value={{ user, login, logout, isAuthenticated: user !== null }}
+      value={{ user, login, logout, updateUser, isAuthenticated: user !== null }}
     >
       {children}
     </AuthContext.Provider>

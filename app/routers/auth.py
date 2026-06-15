@@ -6,12 +6,13 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.deps import get_current_user
 from app.core.phone import normalize_phone
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models.contact import Contact
 from app.models.send import Send
 from app.models.user import User
-from app.schemas.user import LoginRequest, RequestCodePayload, TokenResponse, UserCreate, UserOut
+from app.schemas.user import LoginRequest, RequestCodePayload, TokenResponse, UserCreate, UserOut, UserUpdate
 from app.services.verification import send_verification_code, verify_code
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,27 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
     if synced_sends:
         logger.info("Backfilled %d send(s) for new user %d (%s)", synced_sends, user.id, phone)
 
+    return user
+
+
+@router.get("/me", response_model=UserOut)
+def get_me(user: User = Depends(get_current_user)):
+    """Return the authenticated user's profile."""
+    return user
+
+
+@router.patch("/me", response_model=UserOut)
+def update_me(
+    payload: UserUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Update display name and/or business name for the authenticated user."""
+    data = payload.model_dump(exclude_unset=True)
+    for field, value in data.items():
+        setattr(user, field, value)
+    db.commit()
+    db.refresh(user)
     return user
 
 

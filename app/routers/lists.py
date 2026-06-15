@@ -1,4 +1,6 @@
 """List CRUD and send-to-recipients endpoint."""
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -44,7 +46,11 @@ def create_list(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    lst = List(owner_user_id=user.id, title=payload.title)
+    title = payload.title.strip() if payload.title else None
+    if not title:
+        now = datetime.now(timezone.utc)
+        title = f"Restock — {now.strftime('%b')} {now.day}"
+    lst = List(owner_user_id=user.id, title=title)
     db.add(lst)
     db.flush()
     for pos, item_in in enumerate(payload.items):

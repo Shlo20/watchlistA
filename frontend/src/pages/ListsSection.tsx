@@ -325,7 +325,7 @@ export default function ListsSection() {
                     >
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">
-                          {list.title ?? "Untitled list"}
+                          {list.title}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {list.items.length} item
@@ -377,7 +377,7 @@ export default function ListsSection() {
           <Card>
             <CardContent className="pt-4">
               <div className="space-y-1.5">
-                <Label htmlFor="list-title">Title (optional)</Label>
+                <Label htmlFor="list-title">Title (optional — we'll name it by date)</Label>
                 <Input
                   id="list-title"
                   placeholder="e.g. Weekly restock"
@@ -545,7 +545,7 @@ export default function ListsSection() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              Send &ldquo;{activeSendList?.title ?? "Untitled list"}&rdquo;
+              Send &ldquo;{activeSendList?.title}&rdquo;
             </DialogTitle>
           </DialogHeader>
 

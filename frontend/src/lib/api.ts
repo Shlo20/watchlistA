@@ -5,6 +5,7 @@ export interface User {
   name: string;
   phone: string;
   plan: string;
+  business_name: string | null;
   created_at: string;
 }
 
@@ -301,6 +302,16 @@ export async function dismissSend(sendId: number): Promise<void> {
 
 export async function clearInbox(): Promise<void> {
   await api.post("/inbox/clear");
+}
+
+// ---- Profile ----
+
+export async function updateMe(payload: {
+  name?: string;
+  business_name?: string | null;
+}): Promise<User> {
+  const { data } = await api.patch<User>("/auth/me", payload);
+  return data;
 }
 
 export default api;

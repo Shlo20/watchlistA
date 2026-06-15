@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ListChecks, Users, Inbox, LogOut } from "lucide-react";
+import { ListChecks, Users, Inbox, LogOut, Settings } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import ContactsSection from "@/pages/ContactsSection";
 import ListsSection from "@/pages/ListsSection";
 import InboxSection from "@/pages/InboxSection";
+import SettingsSection from "@/pages/SettingsSection";
 
-type Section = "lists" | "contacts" | "inbox";
+type Section = "lists" | "contacts" | "inbox" | "settings";
 
 const NAV_ITEMS: {
   id: Section;
@@ -16,6 +17,7 @@ const NAV_ITEMS: {
   { id: "lists", label: "Lists", icon: ListChecks },
   { id: "contacts", label: "Contacts", icon: Users },
   { id: "inbox", label: "Inbox", icon: Inbox },
+  { id: "settings", label: "Settings", icon: Settings },
 ];
 
 export default function HomePage() {
@@ -73,6 +75,7 @@ export default function HomePage() {
           {active === "lists" && <ListsSection />}
           {active === "contacts" && <ContactsSection />}
           {active === "inbox" && <InboxSection />}
+          {active === "settings" && <SettingsSection />}
         </main>
       </div>
 
