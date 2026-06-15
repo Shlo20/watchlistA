@@ -252,12 +252,20 @@ export interface SendItemState {
   received_quantity: number;
 }
 
+export interface InboxListItem {
+  id: number;
+  product_id: number | null;
+  product_name: string | null;
+  custom_product_name: string | null;
+  quantity: number;
+}
+
 export interface InboxSend {
   id: number;
   list_id: number;
   list_title: string | null;
   sender_name?: string | null;
-  items: ListItem[];
+  items: InboxListItem[];
   item_states: SendItemState[];
   created_at: string;
 }

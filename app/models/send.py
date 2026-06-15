@@ -36,6 +36,8 @@ class Send(Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    parent_list = relationship("List", foreign_keys=[list_id])
+    sender = relationship("User", foreign_keys=[sender_user_id])
 
 
 class SendItemState(Base):

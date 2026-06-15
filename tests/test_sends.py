@@ -132,6 +132,39 @@ def test_send_appears_in_recipient_inbox(client, manager_token, buyer_token):
     assert len(inbox[0]["item_states"]) == 1
 
 
+def test_inbox_includes_list_title_and_items(client, manager_token, buyer_token):
+    """GET /inbox must return list_title and items with names and quantities."""
+    lst = _make_list(
+        client,
+        manager_token,
+        title="Test Restock",
+        items=[
+            {"custom_product_name": "Widget A", "quantity": 3},
+            {"custom_product_name": "Widget B", "quantity": 1},
+        ],
+    )
+    client.post(
+        f"/lists/{lst['id']}/send",
+        json={"recipients": [{"phone": "5552220001"}]},
+        headers=auth(manager_token),
+    )
+
+    inbox = client.get("/inbox", headers=auth(buyer_token)).json()
+    assert len(inbox) == 1
+    send = inbox[0]
+
+    assert send["list_title"] == "Test Restock"
+
+    assert len(send["items"]) == 2
+    by_name = {item["custom_product_name"]: item for item in send["items"]}
+    assert "Widget A" in by_name
+    assert "Widget B" in by_name
+    assert by_name["Widget A"]["quantity"] == 3
+    assert by_name["Widget B"]["quantity"] == 1
+
+    assert len(send["item_states"]) == 2
+
+
 def test_sender_does_not_see_send_in_own_inbox(client, manager_token, buyer_token):
     lst = _make_list(client, manager_token)
     client.post(

@@ -47,6 +47,54 @@ class SendOut(BaseModel):
     item_states: list[SendItemStateOut]
 
 
+class InboxItemOut(BaseModel):
+    id: int
+    product_id: int | None
+    product_name: str | None
+    custom_product_name: str | None
+    quantity: int
+
+
+class InboxSendOut(BaseModel):
+    id: int
+    list_id: int
+    list_title: str | None
+    sender_name: str | None
+    items: list[InboxItemOut]
+    item_states: list[SendItemStateOut]
+    created_at: datetime
+
+
+def build_inbox_send_out(send) -> InboxSendOut:
+    """Build the richer inbox payload that includes list title and items."""
+    lst = send.parent_list
+    return InboxSendOut(
+        id=send.id,
+        list_id=send.list_id,
+        list_title=lst.title if lst else None,
+        sender_name=send.sender.name if send.sender else None,
+        items=[
+            InboxItemOut(
+                id=item.id,
+                product_id=item.product_id,
+                product_name=item.product.name if item.product else None,
+                custom_product_name=item.custom_product_name,
+                quantity=item.quantity,
+            )
+            for item in (lst.items if lst else [])
+        ],
+        item_states=[
+            SendItemStateOut(
+                list_item_id=s.list_item_id,
+                checked=s.checked,
+                received_quantity=s.received_quantity,
+            )
+            for s in send.item_states
+        ],
+        created_at=send.created_at,
+    )
+
+
 def build_send_out(send, wa_link: str | None = None) -> SendOut:
     """Construct a SendOut from an ORM Send object."""
     return SendOut(

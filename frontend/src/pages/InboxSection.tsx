@@ -37,15 +37,16 @@ function applyCheck(
   listItemId: number,
   checked: boolean
 ): InboxSend {
-  const exists = send.item_states.some((s) => s.list_item_id === listItemId);
+  const itemStates = send.item_states ?? [];
+  const exists = itemStates.some((s) => s.list_item_id === listItemId);
   return {
     ...send,
     item_states: exists
-      ? send.item_states.map((s) =>
+      ? itemStates.map((s) =>
           s.list_item_id === listItemId ? { ...s, checked } : s
         )
       : [
-          ...send.item_states,
+          ...itemStates,
           { list_item_id: listItemId, checked, received_quantity: 0 },
         ],
   };
@@ -109,8 +110,10 @@ export default function InboxSection() {
       <h2 className="text-xl font-semibold">Inbox</h2>
 
       {sends.map((send) => {
-        const checkedCount = send.item_states.filter((s) => s.checked).length;
-        const total = send.items.length;
+        const items = send.items ?? [];
+        const itemStates = send.item_states ?? [];
+        const checkedCount = itemStates.filter((s) => s.checked).length;
+        const total = items.length;
         const allDone = total > 0 && checkedCount === total;
 
         return (
@@ -136,47 +139,53 @@ export default function InboxSection() {
               </div>
             </CardHeader>
             <CardContent>
-              <ul className="space-y-0.5">
-                {send.items.map((item) => {
-                  const state = getItemState(send.item_states, item.id);
-                  const name =
-                    item.product?.name ?? item.custom_product_name ?? "Item";
-                  const label = `${item.quantity}× ${name}`;
+              {items.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-2">
+                  No items in this list.
+                </p>
+              ) : (
+                <ul className="space-y-0.5">
+                  {items.map((item) => {
+                    const state = getItemState(itemStates, item.id);
+                    const name =
+                      item.product_name ?? item.custom_product_name ?? "Item";
+                    const label = `${item.quantity}× ${name}`;
 
-                  return (
-                    <li key={item.id}>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleToggle(send.id, item.id, !state.checked)
-                        }
-                        className="w-full flex items-center gap-4 rounded-lg px-3 min-h-[48px] hover:bg-muted/60 transition-colors text-left"
-                        aria-label={`Toggle ${label}`}
-                      >
-                        <Checkbox
-                          checked={state.checked}
-                          onCheckedChange={(checked) =>
-                            handleToggle(send.id, item.id, !!checked)
+                    return (
+                      <li key={item.id}>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleToggle(send.id, item.id, !state.checked)
                           }
-                          aria-hidden
-                          tabIndex={-1}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                        <span
-                          className={[
-                            "text-sm font-medium transition-colors",
-                            state.checked
-                              ? "line-through text-muted-foreground"
-                              : "",
-                          ].join(" ")}
+                          className="w-full flex items-center gap-4 rounded-lg px-3 min-h-[48px] hover:bg-muted/60 transition-colors text-left"
+                          aria-label={`Toggle ${label}`}
                         >
-                          {label}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
+                          <Checkbox
+                            checked={state.checked}
+                            onCheckedChange={(checked) =>
+                              handleToggle(send.id, item.id, !!checked)
+                            }
+                            aria-hidden
+                            tabIndex={-1}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <span
+                            className={[
+                              "text-sm font-medium transition-colors",
+                              state.checked
+                                ? "line-through text-muted-foreground"
+                                : "",
+                            ].join(" ")}
+                          >
+                            {label}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </CardContent>
           </Card>
         );

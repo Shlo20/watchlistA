@@ -1,19 +1,26 @@
 """Inbox and item check-off endpoints."""
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.database import get_db
 from app.core.deps import get_current_user
-from app.models.list import List
+from app.models.list import List, ListItem
 from app.models.send import Send, SendItemState
 from app.models.user import User
-from app.schemas.send import SendItemStateOut, SendItemStateUpdate, SendOut, build_send_out
+from app.schemas.send import (
+    InboxSendOut,
+    SendItemStateOut,
+    SendItemStateUpdate,
+    SendOut,
+    build_inbox_send_out,
+    build_send_out,
+)
 
 
 router = APIRouter(tags=["sends"])
 
 
-@router.get("/inbox", response_model=list[SendOut])
+@router.get("/inbox", response_model=list[InboxSendOut])
 def inbox(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -22,10 +29,15 @@ def inbox(
     sends = (
         db.query(Send)
         .filter(Send.recipient_user_id == user.id)
+        .options(
+            joinedload(Send.parent_list).joinedload(List.items).joinedload(ListItem.product),
+            joinedload(Send.sender),
+            joinedload(Send.item_states),
+        )
         .order_by(Send.created_at.desc())
         .all()
     )
-    return [build_send_out(s) for s in sends]
+    return [build_inbox_send_out(s) for s in sends]
 
 
 @router.patch(
