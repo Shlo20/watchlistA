@@ -30,8 +30,11 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="flex items-center justify-between px-4 sm:px-6 py-3 border-b">
-        <span className="text-lg font-semibold">Watchlist</span>
+      {/* Header — glass card surface, blurs content behind on scroll */}
+      <header className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-border/60 bg-card/95 backdrop-blur-sm">
+        <span className="text-base font-bold tracking-tight text-foreground">
+          Watch<span className="text-primary">list</span>
+        </span>
         <div className="flex items-center gap-3">
           <span className="hidden sm:block text-sm text-muted-foreground">{user?.name}</span>
           <button
@@ -47,16 +50,16 @@ export default function HomePage() {
 
       <div className="flex h-[calc(100vh-57px)]">
         {/* Sidebar — desktop only */}
-        <nav className="hidden sm:flex sm:flex-col w-48 border-r p-4 space-y-1 shrink-0">
+        <nav className="hidden sm:flex sm:flex-col w-52 border-r border-border/60 p-3 space-y-0.5 shrink-0 bg-card/30">
           {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               onClick={() => setActive(id)}
               className={[
-                "w-full flex items-center gap-2.5 text-left px-3 py-2.5 rounded-md text-sm transition-colors",
+                "w-full flex items-center gap-2.5 text-left px-3 py-2.5 rounded-lg text-sm transition-all duration-150",
                 active === id
-                  ? "bg-accent text-accent-foreground font-medium"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+                  ? "bg-primary/12 text-primary font-semibold shadow-sm"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60",
               ].join(" ")}
             >
               <Icon className="size-4 shrink-0" />
@@ -75,7 +78,7 @@ export default function HomePage() {
 
       {/* Bottom tab bar — mobile only */}
       <nav
-        className="fixed bottom-0 left-0 right-0 sm:hidden bg-card border-t flex items-stretch justify-around z-10"
+        className="fixed bottom-0 left-0 right-0 sm:hidden bg-card/95 backdrop-blur-sm border-t border-border/60 flex items-stretch justify-around z-20"
         style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
       >
         {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
@@ -83,11 +86,14 @@ export default function HomePage() {
             key={id}
             onClick={() => setActive(id)}
             className={[
-              "flex flex-col items-center justify-center flex-1 pt-2 pb-1 gap-1 text-xs transition-colors",
+              "flex flex-col items-center justify-center flex-1 pt-2 pb-1 gap-1 text-xs transition-colors relative",
               active === id ? "text-primary" : "text-muted-foreground",
             ].join(" ")}
           >
-            <Icon className="size-5" />
+            {active === id && (
+              <span className="absolute top-0 left-1/2 -translate-x-1/2 w-7 h-[3px] bg-primary rounded-full" />
+            )}
+            <Icon className="size-5 mt-0.5" />
             <span className="font-medium">{label}</span>
           </button>
         ))}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Minus, Plus, X, Send, Trash2 } from "lucide-react";
+import { Minus, Plus, X, Send, Trash2, ListChecks } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -290,13 +290,18 @@ export default function ListsSection() {
           <Card>
             <CardContent className="pt-4">
               {listsLoading ? (
-                <p className="text-sm text-muted-foreground text-center py-6">
+                <p className="text-sm text-muted-foreground text-center py-8">
                   Loading…
                 </p>
               ) : lists.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-6">
-                  No lists yet. Create one above.
-                </p>
+                <div className="flex flex-col items-center gap-3 py-10">
+                  <div className="flex items-center justify-center size-16 rounded-2xl bg-muted">
+                    <ListChecks className="size-7 text-primary/60" />
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    No lists yet. Create one above.
+                  </p>
+                </div>
               ) : (
                 <ul className="divide-y">
                   {lists.map((list) => (
@@ -545,7 +550,7 @@ export default function ListsSection() {
                         href={r.waLink}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="shrink-0 text-sm font-medium text-green-600 hover:underline"
+                        className="shrink-0 text-sm font-medium text-green-400 hover:text-green-300 hover:underline"
                       >
                         Open WhatsApp
                       </a>

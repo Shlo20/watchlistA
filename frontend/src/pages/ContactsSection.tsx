@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Pencil, Trash2, Plus } from "lucide-react";
+import { Pencil, Trash2, Plus, Users } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -153,13 +153,18 @@ export default function ContactsSection() {
       <Card>
         <CardContent className="pt-4">
           {loading ? (
-            <p className="text-sm text-muted-foreground text-center py-6">
+            <p className="text-sm text-muted-foreground text-center py-8">
               Loading…
             </p>
           ) : contacts.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-6">
-              No contacts yet. Add one above.
-            </p>
+            <div className="flex flex-col items-center gap-3 py-10">
+              <div className="flex items-center justify-center size-16 rounded-2xl bg-muted">
+                <Users className="size-7 text-primary/60" />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                No contacts yet. Add one above.
+              </p>
+            </div>
           ) : (
             <ul className="divide-y">
               {contacts.map((c) =>

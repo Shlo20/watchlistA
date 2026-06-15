@@ -56,13 +56,15 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
+    <div className="min-h-screen flex items-center justify-center bg-background px-4 py-8">
       <Card className="w-full max-w-sm">
-        <CardHeader className="space-y-1 pb-2">
-          <h1 className="text-3xl font-bold tracking-tight">Watchlist</h1>
-          <p className="text-sm text-muted-foreground">Create an account</p>
+        <CardHeader className="pb-2 pt-6 px-6">
+          <h1 className="text-3xl font-bold tracking-tight">
+            Watch<span className="text-primary">list</span>
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">Create an account</p>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-6 pb-6">
           {step === "phone" ? (
             <form onSubmit={handleRequestCode} className="space-y-4">
               <div className="space-y-1.5">
@@ -75,15 +77,16 @@ export default function RegisterPage() {
                   onChange={(e) => setPhone(e.target.value)}
                   required
                   autoComplete="tel"
+                  className="h-11"
                 />
               </div>
-              <Button type="submit" className="w-full" disabled={loading}>
+              <Button type="submit" size="lg" className="w-full mt-2" disabled={loading}>
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Send code
               </Button>
               <p className="text-center text-xs text-muted-foreground">
                 Already have an account?{" "}
-                <Link to="/login" className="underline hover:text-foreground">
+                <Link to="/login" className="text-primary hover:underline">
                   Sign in
                 </Link>
               </p>
@@ -100,6 +103,7 @@ export default function RegisterPage() {
                   onChange={(e) => setName(e.target.value)}
                   required
                   autoComplete="name"
+                  className="h-11"
                 />
               </div>
               <div className="space-y-1.5">
@@ -111,6 +115,7 @@ export default function RegisterPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   autoComplete="new-password"
+                  className="h-11"
                 />
               </div>
               <div className="space-y-1.5">
@@ -125,12 +130,13 @@ export default function RegisterPage() {
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
                   required
+                  className="h-11"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Dev: use <span className="font-mono">000000</span>
+                  Dev: use <span className="font-mono text-primary/80">000000</span>
                 </p>
               </div>
-              <Button type="submit" className="w-full" disabled={loading}>
+              <Button type="submit" size="lg" className="w-full mt-2" disabled={loading}>
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Create account
               </Button>
@@ -141,7 +147,7 @@ export default function RegisterPage() {
                 onClick={() => setStep("phone")}
                 disabled={loading}
               >
-                Back — change phone number
+                ← Change phone number
               </Button>
             </form>
           )}

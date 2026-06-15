@@ -34,13 +34,15 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
+    <div className="min-h-screen flex items-center justify-center bg-background px-4 py-8">
       <Card className="w-full max-w-sm">
-        <CardHeader className="space-y-1 pb-2">
-          <h1 className="text-3xl font-bold tracking-tight">Watchlist</h1>
-          <p className="text-sm text-muted-foreground">Sign in to continue</p>
+        <CardHeader className="pb-2 pt-6 px-6">
+          <h1 className="text-3xl font-bold tracking-tight">
+            Watch<span className="text-primary">list</span>
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">Sign in to continue</p>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-6 pb-6">
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="phone">Phone number</Label>
@@ -52,6 +54,7 @@ export default function LoginPage() {
                 onChange={(e) => setPhone(e.target.value)}
                 required
                 autoComplete="tel"
+                className="h-11"
               />
             </div>
             <div className="space-y-1.5">
@@ -63,9 +66,10 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 autoComplete="current-password"
+                className="h-11"
               />
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="submit" size="lg" className="w-full mt-2" disabled={loading}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Sign in
             </Button>
@@ -74,7 +78,7 @@ export default function LoginPage() {
             </p>
             <p className="text-center text-xs text-muted-foreground">
               No account?{" "}
-              <Link to="/register" className="underline hover:text-foreground">
+              <Link to="/register" className="text-primary hover:underline">
                 Create one
               </Link>
             </p>

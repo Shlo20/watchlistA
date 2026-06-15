@@ -146,10 +146,16 @@ export default function InboxSection() {
 
   if (sends.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-3 text-center px-4">
-        <Inbox className="size-12 text-muted-foreground" />
-        <p className="text-lg font-medium">Inbox is clear</p>
-        <p className="text-sm text-muted-foreground">Lists sent to you will appear here.</p>
+      <div className="flex flex-col items-center justify-center h-full gap-5 text-center px-8">
+        <div className="flex items-center justify-center size-20 rounded-2xl bg-muted">
+          <Inbox className="size-9 text-primary/70" />
+        </div>
+        <div className="space-y-1.5">
+          <p className="text-lg font-semibold">Inbox is clear</p>
+          <p className="text-sm text-muted-foreground max-w-[220px]">
+            Lists sent to you will appear here.
+          </p>
+        </div>
       </div>
     );
   }
