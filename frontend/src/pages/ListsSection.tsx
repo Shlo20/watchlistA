@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Minus, Plus, X, Send, Trash2, ListChecks } from "lucide-react";
+import { Minus, Plus, X, Send, Trash2, ListChecks, Pencil, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import {
   listLists,
   createList,
   deleteList,
+  updateList,
   updateListItem,
   removeListItem,
   sendList,
@@ -45,6 +46,11 @@ export default function ListsSection() {
   const [lists, setLists] = useState<WatchList[]>([]);
   const [listsLoading, setListsLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+
+  // Rename state
+  const [editingListId, setEditingListId] = useState<number | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [savingTitleId, setSavingTitleId] = useState<number | null>(null);
 
   // Item update/remove loading state
   const [updatingItemIds, setUpdatingItemIds] = useState<Set<number>>(new Set());
@@ -94,7 +100,9 @@ export default function ListsSection() {
       const created = await createList({ items: [] });
       setLists((prev) => [created, ...prev]);
       setQuotesMap((prev) => new Map(prev).set(created.id, []));
-      toast.success("New list created — add items from the Search tab");
+      // Start editing the title immediately after creation
+      setEditingListId(created.id);
+      setEditTitle(created.title ?? "");
     } catch {
       toast.error("Couldn't create list. Try again.");
     } finally {
@@ -106,9 +114,41 @@ export default function ListsSection() {
     try {
       await deleteList(id);
       setLists((prev) => prev.filter((l) => l.id !== id));
+      if (editingListId === id) cancelEdit();
       toast.success("List deleted");
     } catch {
       toast.error("Couldn't delete. Try again.");
+    }
+  }
+
+  // ── Rename ───────────────────────────────────────────────────────────────
+
+  function startEdit(list: WatchList) {
+    setEditingListId(list.id);
+    setEditTitle(list.title ?? "");
+  }
+
+  function cancelEdit() {
+    setEditingListId(null);
+    setEditTitle("");
+  }
+
+  async function confirmEdit(list: WatchList) {
+    const title = editTitle.trim();
+    // If blank or unchanged, just close without saving
+    if (!title || title === list.title) {
+      cancelEdit();
+      return;
+    }
+    setSavingTitleId(list.id);
+    try {
+      const updated = await updateList(list.id, { title });
+      setLists((prev) => prev.map((l) => (l.id === list.id ? { ...l, title: updated.title } : l)));
+      cancelEdit();
+    } catch {
+      toast.error("Couldn't rename. Try again.");
+    } finally {
+      setSavingTitleId(null);
     }
   }
 
@@ -144,13 +184,11 @@ export default function ListsSection() {
     const newQty = Math.max(1, item.quantity + delta);
     if (newQty === item.quantity || updatingItemIds.has(item.id)) return;
     setItemBusy(item.id, true);
-    // Optimistic update
     updateItemInState(listId, { ...item, quantity: newQty });
     try {
       const updated = await updateListItem(listId, item.id, { quantity: newQty });
       updateItemInState(listId, updated);
     } catch {
-      // Revert
       updateItemInState(listId, item);
       toast.error("Couldn't update quantity.");
     } finally {
@@ -165,10 +203,11 @@ export default function ListsSection() {
     try {
       await removeListItem(listId, item.id);
     } catch {
-      // Revert
       setLists((prev) =>
         prev.map((l) =>
-          l.id === listId ? { ...l, items: [...l.items, item].sort((a, b) => a.position - b.position) } : l
+          l.id === listId
+            ? { ...l, items: [...l.items, item].sort((a, b) => a.position - b.position) }
+            : l
         )
       );
       toast.error("Couldn't remove item.");
@@ -244,8 +283,9 @@ export default function ListsSection() {
         deliveredToInbox: r.deliver_to_inbox,
       }));
       setSendResults(mapped);
-      // Mark list as sent
-      setLists((prev) => prev.map((l) => (l.id === activeSendList.id ? { ...l, has_been_sent: true } : l)));
+      setLists((prev) =>
+        prev.map((l) => (l.id === activeSendList.id ? { ...l, has_been_sent: true } : l))
+      );
       const externals = mapped.filter((r) => r.waLink !== null);
       if (externals.length === 1 && externals[0].waLink) window.open(externals[0].waLink, "_blank");
       toast.success(`Sent to ${results.length} recipient${results.length === 1 ? "" : "s"}`);
@@ -293,40 +333,94 @@ export default function ListsSection() {
           <div className="space-y-3">
             {lists.map((list) => {
               const quotes = quotesMap.get(list.id) ?? [];
+              const isEditing = editingListId === list.id;
+              const isSavingTitle = savingTitleId === list.id;
+
               return (
                 <Card key={list.id}>
                   <CardHeader className="pb-2 pt-4">
                     <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <CardTitle className="text-base leading-snug truncate">
-                          {list.title}
-                        </CardTitle>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {list.items.length} item{list.items.length === 1 ? "" : "s"}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {list.has_been_sent && (
-                          <Badge variant="secondary" className="text-xs">Sent</Badge>
+                      {/* Title area */}
+                      <div className="flex-1 min-w-0">
+                        {isEditing ? (
+                          <div className="flex items-center gap-1.5">
+                            <Input
+                              autoFocus
+                              value={editTitle}
+                              onChange={(e) => setEditTitle(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") { e.preventDefault(); confirmEdit(list); }
+                                if (e.key === "Escape") { e.preventDefault(); cancelEdit(); }
+                              }}
+                              className="h-8 text-sm font-medium flex-1"
+                              disabled={isSavingTitle}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => confirmEdit(list)}
+                              disabled={isSavingTitle}
+                              className="shrink-0 flex items-center justify-center size-8 rounded-lg border border-input text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 transition-colors"
+                              aria-label="Confirm rename"
+                            >
+                              <Check className="size-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={cancelEdit}
+                              disabled={isSavingTitle}
+                              className="shrink-0 flex items-center justify-center size-8 rounded-lg border border-input text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 transition-colors"
+                              aria-label="Cancel rename"
+                            >
+                              <X className="size-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <p className="text-base font-semibold leading-snug truncate">
+                              {list.title}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => startEdit(list)}
+                              className="shrink-0 p-1 text-muted-foreground hover:text-foreground transition-colors"
+                              aria-label="Rename list"
+                            >
+                              <Pencil className="size-3" />
+                            </button>
+                          </div>
                         )}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openSendDialog(list)}
-                          className="h-7 px-2 text-xs"
-                        >
-                          <Send className="size-3 mr-1" />
-                          Send
-                        </Button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteList(list.id)}
-                          className="text-muted-foreground hover:text-destructive transition-colors p-1"
-                          aria-label="Delete list"
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
+                        {!isEditing && (
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {list.items.length} item{list.items.length === 1 ? "" : "s"}
+                          </p>
+                        )}
                       </div>
+
+                      {/* Actions */}
+                      {!isEditing && (
+                        <div className="flex items-center gap-2 shrink-0">
+                          {list.has_been_sent && (
+                            <Badge variant="secondary" className="text-xs">Sent</Badge>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openSendDialog(list)}
+                            className="h-7 px-2 text-xs"
+                          >
+                            <Send className="size-3 mr-1" />
+                            Send
+                          </Button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteList(list.id)}
+                            className="text-muted-foreground hover:text-destructive transition-colors p-1"
+                            aria-label="Delete list"
+                          >
+                            <Trash2 className="size-4" />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </CardHeader>
 
@@ -339,7 +433,6 @@ export default function ListsSection() {
                           return (
                             <li key={item.id} className="flex items-center gap-2 py-2 min-h-[44px]">
                               <span className="flex-1 text-sm truncate">{displayName}</span>
-                              {/* Qty stepper */}
                               <div className="flex items-center gap-1 shrink-0">
                                 <button
                                   type="button"

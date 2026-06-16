@@ -4,6 +4,7 @@ import { Search, Flag, Plus, ChevronDown, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   searchProducts,
   listLists,
@@ -17,6 +18,12 @@ import {
 
 const LAST_LIST_KEY = "watchlist_last_list_id";
 
+function defaultListTitle(): string {
+  const d = new Date();
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `Restock — ${months[d.getMonth()]} ${d.getDate()}`;
+}
+
 export default function SearchSection() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Product[]>([]);
@@ -25,11 +32,19 @@ export default function SearchSection() {
     const saved = localStorage.getItem(LAST_LIST_KEY);
     return saved ? Number(saved) : null;
   });
+
+  // Dropdown state
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [creatingList, setCreatingList] = useState(false);
+  const [newListMode, setNewListMode] = useState(false);
+  const [newListTitle, setNewListTitle] = useState("");
+  const [savingNewList, setSavingNewList] = useState(false);
+
+  // Add-item loading state
   const [addingProductIds, setAddingProductIds] = useState<Set<number>>(new Set());
   const [addingCustom, setAddingCustom] = useState(false);
+
   const selectorRef = useRef<HTMLDivElement>(null);
+  const newListInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     listLists()
@@ -49,19 +64,19 @@ export default function SearchSection() {
     return () => clearTimeout(timer);
   }, [query]);
 
-  // Close picker on outside click
+  // Close picker on outside click — creates nothing
   useEffect(() => {
     if (!pickerOpen) return;
     function onMouseDown(e: MouseEvent) {
       if (selectorRef.current && !selectorRef.current.contains(e.target as Node)) {
-        setPickerOpen(false);
+        closeDropdown();
       }
     }
     document.addEventListener("mousedown", onMouseDown);
     return () => document.removeEventListener("mousedown", onMouseDown);
   }, [pickerOpen]);
 
-  // Drop saved target if it no longer exists in lists
+  // Drop saved target if it no longer exists
   useEffect(() => {
     if (targetListId !== null && lists.length > 0 && !lists.find((l) => l.id === targetListId)) {
       setTargetListId(null);
@@ -69,56 +84,66 @@ export default function SearchSection() {
     }
   }, [lists, targetListId]);
 
+  // Focus the new-list input when it appears
+  useEffect(() => {
+    if (newListMode) {
+      setTimeout(() => newListInputRef.current?.focus(), 0);
+    }
+  }, [newListMode]);
+
   const targetList = lists.find((l) => l.id === targetListId) ?? null;
+
+  function closeDropdown() {
+    setPickerOpen(false);
+    setNewListMode(false);
+    setNewListTitle("");
+  }
 
   function selectList(list: WatchList) {
     setTargetListId(list.id);
     localStorage.setItem(LAST_LIST_KEY, String(list.id));
-    setPickerOpen(false);
+    closeDropdown();
   }
 
-  async function handleNewList() {
-    setCreatingList(true);
-    setPickerOpen(false);
+  function openNewListMode() {
+    setNewListTitle(defaultListTitle());
+    setNewListMode(true);
+  }
+
+  function cancelNewList() {
+    // Go back to the list picker view; do NOT close the dropdown
+    setNewListMode(false);
+    setNewListTitle("");
+  }
+
+  async function confirmNewList() {
+    if (savingNewList) return;
+    setSavingNewList(true);
     try {
-      const created = await createList({ items: [] });
+      const title = newListTitle.trim() || defaultListTitle();
+      const created = await createList({ title, items: [] });
       setLists((prev) => [created, ...prev]);
       setTargetListId(created.id);
       localStorage.setItem(LAST_LIST_KEY, String(created.id));
+      closeDropdown();
     } catch {
       toast.error("Couldn't create list. Try again.");
     } finally {
-      setCreatingList(false);
+      setSavingNewList(false);
     }
   }
 
-  // Returns the target list, opening the picker or auto-creating as needed.
-  async function resolveTarget(): Promise<WatchList | null> {
+  // Returns the target list if one is selected, otherwise opens the picker and returns null.
+  // Never creates anything silently.
+  function resolveTarget(): WatchList | null {
     if (targetList) return targetList;
-    if (lists.length > 0) {
-      // Lists exist but none selected — prompt user to pick
-      setPickerOpen(true);
-      return null;
-    }
-    // No lists at all — auto-create one
-    setCreatingList(true);
-    try {
-      const created = await createList({ items: [] });
-      setLists((prev) => [created, ...prev]);
-      setTargetListId(created.id);
-      localStorage.setItem(LAST_LIST_KEY, String(created.id));
-      return created;
-    } catch {
-      toast.error("Couldn't create a list. Try again.");
-      return null;
-    } finally {
-      setCreatingList(false);
-    }
+    setPickerOpen(true);
+    return null;
   }
 
   async function handleAddProduct(product: Product) {
     if (addingProductIds.has(product.id)) return;
-    const list = await resolveTarget();
+    const list = resolveTarget();
     if (!list) return;
     setAddingProductIds((prev) => new Set(prev).add(product.id));
     try {
@@ -138,7 +163,7 @@ export default function SearchSection() {
   async function handleAddCustom() {
     const name = query.trim();
     if (!name || addingCustom) return;
-    const list = await resolveTarget();
+    const list = resolveTarget();
     if (!list) return;
     setAddingCustom(true);
     try {
@@ -178,8 +203,7 @@ export default function SearchSection() {
       <div ref={selectorRef} className="relative">
         <button
           type="button"
-          onClick={() => setPickerOpen((o) => !o)}
-          disabled={creatingList}
+          onClick={() => (pickerOpen ? closeDropdown() : setPickerOpen(true))}
           className={cn(
             "w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-sm transition-colors text-left",
             pickerOpen
@@ -188,9 +212,7 @@ export default function SearchSection() {
           )}
         >
           <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
-            {creatingList ? (
-              <span className="text-muted-foreground">Creating list…</span>
-            ) : targetList ? (
+            {targetList ? (
               <>
                 <span className="text-xs text-muted-foreground shrink-0">Adding to</span>
                 <span className="font-medium truncate">{targetList.title}</span>
@@ -212,42 +234,84 @@ export default function SearchSection() {
 
         {pickerOpen && (
           <div className="absolute top-full mt-1.5 left-0 right-0 z-30 rounded-xl border bg-popover shadow-lg overflow-hidden">
-            {lists.length > 0 && (
-              <ul className="divide-y max-h-52 overflow-y-auto">
-                {lists.map((l) => {
-                  const active = l.id === targetListId;
-                  return (
-                    <li key={l.id}>
-                      <button
-                        type="button"
-                        onClick={() => selectList(l)}
-                        className={cn(
-                          "w-full flex items-center gap-3 px-4 py-3 text-sm text-left hover:bg-muted transition-colors",
-                          active && "bg-primary/8 text-primary font-medium"
-                        )}
-                      >
-                        <Check className={cn("size-3.5 shrink-0", active ? "opacity-100" : "opacity-0")} />
-                        <span className="flex-1 truncate">{l.title}</span>
-                        {l.has_been_sent && (
-                          <Badge variant="secondary" className="text-xs shrink-0">Sent</Badge>
-                        )}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
+            {newListMode ? (
+              /* ── Inline new-list naming form ── */
+              <div className="p-3 space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Name your list
+                </p>
+                <Input
+                  ref={newListInputRef}
+                  value={newListTitle}
+                  onChange={(e) => setNewListTitle(e.target.value)}
+                  placeholder={defaultListTitle()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { e.preventDefault(); confirmNewList(); }
+                    if (e.key === "Escape") { e.preventDefault(); cancelNewList(); }
+                  }}
+                  className="h-9 text-sm"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    className="flex-1 h-8"
+                    disabled={savingNewList}
+                    onClick={confirmNewList}
+                  >
+                    {savingNewList ? "Creating…" : "Confirm"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 px-3"
+                    disabled={savingNewList}
+                    onClick={cancelNewList}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              /* ── List picker ── */
+              <>
+                {lists.length > 0 && (
+                  <ul className="divide-y max-h-52 overflow-y-auto">
+                    {lists.map((l) => {
+                      const active = l.id === targetListId;
+                      return (
+                        <li key={l.id}>
+                          <button
+                            type="button"
+                            onClick={() => selectList(l)}
+                            className={cn(
+                              "w-full flex items-center gap-3 px-4 py-3 text-sm text-left hover:bg-muted transition-colors",
+                              active && "bg-primary/8 text-primary font-medium"
+                            )}
+                          >
+                            <Check className={cn("size-3.5 shrink-0", active ? "opacity-100" : "opacity-0")} />
+                            <span className="flex-1 truncate">{l.title}</span>
+                            {l.has_been_sent && (
+                              <Badge variant="secondary" className="text-xs shrink-0">Sent</Badge>
+                            )}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                <button
+                  type="button"
+                  onClick={openNewListMode}
+                  className={cn(
+                    "w-full flex items-center gap-2 px-4 py-3 text-sm text-left text-primary hover:bg-muted transition-colors",
+                    lists.length > 0 && "border-t"
+                  )}
+                >
+                  <Plus className="size-3.5 shrink-0" />
+                  New list
+                </button>
+              </>
             )}
-            <button
-              type="button"
-              onClick={handleNewList}
-              className={cn(
-                "w-full flex items-center gap-2 px-4 py-3 text-sm text-left text-primary hover:bg-muted transition-colors",
-                lists.length > 0 && "border-t"
-              )}
-            >
-              <Plus className="size-3.5 shrink-0" />
-              New list
-            </button>
           </div>
         )}
       </div>
@@ -303,7 +367,7 @@ export default function SearchSection() {
             </div>
           ))}
 
-          {/* Custom item row — always shown when there's a query */}
+          {/* Custom item row */}
           <div className="flex items-center gap-3 px-4 py-3.5 min-h-[56px] bg-muted/25">
             <p className="flex-1 text-sm text-muted-foreground min-w-0 truncate">
               Add as custom: <span className="font-medium text-foreground">&ldquo;{query.trim()}&rdquo;</span>
