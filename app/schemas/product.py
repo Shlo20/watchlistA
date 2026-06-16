@@ -8,7 +8,7 @@ from app.models.product import ProductCategory
 
 class ProductCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
-    category: ProductCategory
+    category: ProductCategory = ProductCategory.OTHER
     brand: str | None = Field(default=None, max_length=100)
     model: str | None = Field(default=None, max_length=100)
 

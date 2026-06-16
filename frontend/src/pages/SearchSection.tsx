@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   searchProducts,
+  createProduct,
   listLists,
   addListItem,
   createList,
@@ -42,6 +43,7 @@ export default function SearchSection() {
   // Add-item loading state
   const [addingProductIds, setAddingProductIds] = useState<Set<number>>(new Set());
   const [addingCustom, setAddingCustom] = useState(false);
+  const [addingCatalog, setAddingCatalog] = useState(false);
 
   const selectorRef = useRef<HTMLDivElement>(null);
   const newListInputRef = useRef<HTMLInputElement>(null);
@@ -177,6 +179,30 @@ export default function SearchSection() {
       toast.error("Couldn't add item. Try again.");
     } finally {
       setAddingCustom(false);
+    }
+  }
+
+  async function handleAddToCatalog() {
+    const name = query.trim();
+    if (!name || addingCatalog) return;
+    const list = resolveTarget();
+    if (!list) return;
+    setAddingCatalog(true);
+    try {
+      const newProduct = await createProduct({ name });
+      await addListItem(list.id, { product_id: newProduct.id, quantity: 1 });
+      if (list.has_been_sent) {
+        toast.warning(`Added "${name}" to catalog and "${list.title}" — list was already sent`);
+      } else {
+        toast.success(`Added "${name}" to catalog and "${list.title}"`);
+      }
+      // Refresh results so the new product appears as a real catalog item with flag toggle
+      const fresh = await searchProducts(name);
+      setResults(fresh.slice(0, 8));
+    } catch {
+      toast.error("Couldn't add to catalog. Try again.");
+    } finally {
+      setAddingCatalog(false);
     }
   }
 
@@ -367,20 +393,34 @@ export default function SearchSection() {
             </div>
           ))}
 
-          {/* Custom item row */}
-          <div className="flex items-center gap-3 px-4 py-3.5 min-h-[56px] bg-muted/25">
-            <p className="flex-1 text-sm text-muted-foreground min-w-0 truncate">
-              Add as custom: <span className="font-medium text-foreground">&ldquo;{query.trim()}&rdquo;</span>
+          {/* Custom item row — two actions */}
+          <div className="px-4 py-3 bg-muted/25 space-y-2">
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">&ldquo;{query.trim()}&rdquo;</span>
+              {results.length === 0 ? " — not in catalog" : ""}
             </p>
-            <button
-              type="button"
-              disabled={addingCustom}
-              onClick={handleAddCustom}
-              className="shrink-0 flex items-center justify-center size-8 rounded-lg border border-input text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 transition-colors"
-              aria-label="Add as custom item"
-            >
-              <Plus className="size-4" />
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={addingCustom || addingCatalog}
+                onClick={handleAddCustom}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-input text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 transition-colors"
+              >
+                <Plus className="size-3 shrink-0" />
+                {addingCustom ? "Adding…" : "Add to list"}
+                <span className="opacity-50">· one-off</span>
+              </button>
+              <button
+                type="button"
+                disabled={addingCatalog || addingCustom}
+                onClick={handleAddToCatalog}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/40 text-xs text-primary hover:bg-primary/10 disabled:opacity-40 transition-colors"
+              >
+                <Plus className="size-3 shrink-0" />
+                {addingCatalog ? "Saving…" : "Add to catalog"}
+                <span className="opacity-60">· save to stock</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -108,6 +108,14 @@ export async function searchProducts(query: string): Promise<Product[]> {
   return data;
 }
 
+export async function createProduct(payload: {
+  name: string;
+  category?: ProductCategory;
+}): Promise<Product> {
+  const { data } = await api.post<Product>("/products", payload);
+  return data;
+}
+
 export async function createRequest(payload: {
   product_id?: number;
   custom_product_name?: string;
