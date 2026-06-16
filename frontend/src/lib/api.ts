@@ -178,9 +178,10 @@ export async function deleteContact(id: number): Promise<void> {
 export interface ListItem {
   id: number;
   product_id: number | null;
-  product: Product | null;
+  product_name: string | null;
   custom_product_name: string | null;
   quantity: number;
+  position: number;
 }
 
 export interface WatchList {
@@ -188,6 +189,7 @@ export interface WatchList {
   title: string | null;
   items: ListItem[];
   created_at: string;
+  has_been_sent: boolean;
 }
 
 export async function createList(payload: {
@@ -222,6 +224,27 @@ export async function updateList(
 
 export async function deleteList(id: number): Promise<void> {
   await api.delete(`/lists/${id}`);
+}
+
+export async function addListItem(
+  listId: number,
+  payload: { product_id?: number; custom_product_name?: string; quantity?: number }
+): Promise<ListItem> {
+  const { data } = await api.post<ListItem>(`/lists/${listId}/items`, { quantity: 1, ...payload });
+  return data;
+}
+
+export async function updateListItem(
+  listId: number,
+  itemId: number,
+  payload: { quantity: number }
+): Promise<ListItem> {
+  const { data } = await api.patch<ListItem>(`/lists/${listId}/items/${itemId}`, payload);
+  return data;
+}
+
+export async function removeListItem(listId: number, itemId: number): Promise<void> {
+  await api.delete(`/lists/${listId}/items/${itemId}`);
 }
 
 // ---- Send ----

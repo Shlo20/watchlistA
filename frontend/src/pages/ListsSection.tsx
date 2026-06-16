@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Minus, Plus, X, Send, Trash2, ListChecks, Flag } from "lucide-react";
+import { Minus, Plus, X, Send, Trash2, ListChecks } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -19,31 +19,19 @@ import {
   listLists,
   createList,
   deleteList,
+  updateListItem,
+  removeListItem,
   sendList,
   listContacts,
-  searchProducts,
-  getLowProducts,
-  flagLow,
-  unflagLow,
   getListQuotes,
   getQuoteWaLink,
   centsToDollars,
   type WatchList,
+  type ListItem,
   type Contact,
-  type Product,
   type Quote,
   type SendRecipient,
 } from "@/lib/api";
-
-type View = "index" | "builder";
-
-type DraftItem = {
-  key: string;
-  product_id?: number;
-  custom_product_name?: string;
-  quantity: number;
-  displayName: string;
-};
 
 type ContactChannels = { inbox: boolean; whatsapp: boolean };
 
@@ -54,29 +42,17 @@ type SendResult = {
 };
 
 export default function ListsSection() {
-  // Index state
-  const [view, setView] = useState<View>("index");
   const [lists, setLists] = useState<WatchList[]>([]);
   const [listsLoading, setListsLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
 
-  // Builder state
-  const [draftTitle, setDraftTitle] = useState("");
-  const [draftItems, setDraftItems] = useState<DraftItem[]>([]);
-  const [searchInput, setSearchInput] = useState("");
-  const [suggestions, setSuggestions] = useState<Product[]>([]);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [customText, setCustomText] = useState<string | null>(null);
-  const [itemQty, setItemQty] = useState(1);
-  const [saving, setSaving] = useState(false);
-
-  // Low-stock state
-  const [lowProducts, setLowProducts] = useState<Product[]>([]);
+  // Item update/remove loading state
+  const [updatingItemIds, setUpdatingItemIds] = useState<Set<number>>(new Set());
 
   // Send dialog state
   const [activeSendList, setActiveSendList] = useState<WatchList | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsLoading, setContactsLoading] = useState(false);
-  // Maps contact id → chosen channels; being in the map means the contact is selected
   const [contactChannels, setContactChannels] = useState<Map<number, ContactChannels>>(new Map());
   const [rawPhone, setRawPhone] = useState("");
   const [sending, setSending] = useState(false);
@@ -85,33 +61,21 @@ export default function ListsSection() {
   // Quotes state
   const [quotesMap, setQuotesMap] = useState<Map<number, Quote[]>>(new Map());
 
-  // ---- load lists on mount ----
-
   useEffect(() => {
     listLists()
       .then((data) => {
-        const sorted = [...data].sort(
-          (a, b) =>
-            new Date(b.created_at).getTime() -
-            new Date(a.created_at).getTime()
-        );
-        setLists(sorted);
-        // Fetch quotes for each list
+        setLists(data);
         Promise.all(
-          sorted.map((l) =>
+          data.map((l) =>
             getListQuotes(l.id)
               .then((qs) => [l.id, qs] as [number, Quote[]])
               .catch(() => [l.id, []] as [number, Quote[]])
           )
-        ).then((entries) => {
-          setQuotesMap(new Map(entries));
-        });
+        ).then((entries) => setQuotesMap(new Map(entries)));
       })
       .catch(() => toast.error("Couldn't load lists."))
       .finally(() => setListsLoading(false));
   }, []);
-
-  // ---- load contacts when send dialog opens ----
 
   useEffect(() => {
     if (!activeSendList) return;
@@ -122,95 +86,19 @@ export default function ListsSection() {
       .finally(() => setContactsLoading(false));
   }, [activeSendList]);
 
-  // ---- load low products when entering builder ----
+  // ── New list ─────────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    if (view !== "builder") return;
-    getLowProducts().then(setLowProducts).catch(() => {});
-  }, [view]);
-
-  // ---- debounced product search ----
-
-  useEffect(() => {
-    if (!searchInput.trim() || selectedProduct !== null || customText !== null) {
-      setSuggestions([]);
-      return;
-    }
-    const timer = setTimeout(async () => {
-      try {
-        const results = await searchProducts(searchInput);
-        setSuggestions(results.slice(0, 5));
-      } catch {
-        // silent — user can still use custom fallback
-      }
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [searchInput, selectedProduct, customText]);
-
-  // ---- builder helpers ----
-
-  const isItemSelected = selectedProduct !== null || customText !== null;
-  const showSuggestions = searchInput.trim().length > 0 && !isItemSelected;
-
-  function clearItemSelection() {
-    setSelectedProduct(null);
-    setCustomText(null);
-    setSearchInput("");
-    setSuggestions([]);
-  }
-
-  function resetBuilder() {
-    setDraftTitle("");
-    setDraftItems([]);
-    clearItemSelection();
-    setItemQty(1);
-  }
-
-  function addItemToDraft() {
-    if (!isItemSelected) return;
-    const key = `${Date.now()}-${Math.random()}`;
-    const newItem: DraftItem = selectedProduct
-      ? {
-          key,
-          product_id: selectedProduct.id,
-          quantity: itemQty,
-          displayName: selectedProduct.name,
-        }
-      : {
-          key,
-          custom_product_name: customText!,
-          quantity: itemQty,
-          displayName: customText!,
-        };
-    setDraftItems((prev) => [...prev, newItem]);
-    clearItemSelection();
-    setItemQty(1);
-  }
-
-  function removeDraftItem(key: string) {
-    setDraftItems((prev) => prev.filter((i) => i.key !== key));
-  }
-
-  async function handleSaveList() {
-    if (draftItems.length === 0) return;
-    setSaving(true);
+  async function handleNewList() {
+    setCreating(true);
     try {
-      const created = await createList({
-        title: draftTitle.trim() || undefined,
-        items: draftItems.map((item) => ({
-          product_id: item.product_id,
-          custom_product_name: item.custom_product_name,
-          quantity: item.quantity,
-        })),
-      });
+      const created = await createList({ items: [] });
       setLists((prev) => [created, ...prev]);
-      resetBuilder();
-      setView("index");
-      toast.success("List saved");
+      setQuotesMap((prev) => new Map(prev).set(created.id, []));
+      toast.success("New list created — add items from the Search tab");
     } catch {
-      toast.error("Couldn't save. Try again.");
+      toast.error("Couldn't create list. Try again.");
     } finally {
-      setSaving(false);
+      setCreating(false);
     }
   }
 
@@ -224,40 +112,72 @@ export default function ListsSection() {
     }
   }
 
-  function addLowProductToDraft(product: Product) {
-    const key = `${Date.now()}-${Math.random()}`;
-    setDraftItems((prev) => [...prev, {
-      key,
-      product_id: product.id,
-      quantity: 1,
-      displayName: product.name,
-    }]);
+  // ── Item editing ─────────────────────────────────────────────────────────
+
+  function setItemBusy(itemId: number, busy: boolean) {
+    setUpdatingItemIds((prev) => {
+      const s = new Set(prev);
+      busy ? s.add(itemId) : s.delete(itemId);
+      return s;
+    });
   }
 
-  async function toggleLowFlag(product: Product) {
-    if (product.is_low) {
-      await unflagLow(product.id).catch(() => {});
-      setLowProducts((prev) => prev.filter((p) => p.id !== product.id));
-      setSuggestions((prev) => prev.map((p) => p.id === product.id ? { ...p, is_low: false } : p));
-    } else {
-      const updated = await flagLow(product.id).catch(() => null);
-      if (updated) {
-        setLowProducts((prev) => prev.some((p) => p.id === product.id) ? prev : [...prev, updated]);
-        setSuggestions((prev) => prev.map((p) => p.id === product.id ? { ...p, is_low: true } : p));
-      }
-    }
+  function updateItemInState(listId: number, updatedItem: ListItem) {
+    setLists((prev) =>
+      prev.map((l) =>
+        l.id === listId
+          ? { ...l, items: l.items.map((i) => (i.id === updatedItem.id ? updatedItem : i)) }
+          : l
+      )
+    );
   }
 
-  async function handleShareQuoteWa(sendId: number) {
+  function removeItemFromState(listId: number, itemId: number) {
+    setLists((prev) =>
+      prev.map((l) =>
+        l.id === listId ? { ...l, items: l.items.filter((i) => i.id !== itemId) } : l
+      )
+    );
+  }
+
+  async function handleQtyChange(listId: number, item: ListItem, delta: number) {
+    const newQty = Math.max(1, item.quantity + delta);
+    if (newQty === item.quantity || updatingItemIds.has(item.id)) return;
+    setItemBusy(item.id, true);
+    // Optimistic update
+    updateItemInState(listId, { ...item, quantity: newQty });
     try {
-      const link = await getQuoteWaLink(sendId);
-      window.open(link, "_blank");
+      const updated = await updateListItem(listId, item.id, { quantity: newQty });
+      updateItemInState(listId, updated);
     } catch {
-      toast.error("Couldn't get WhatsApp link.");
+      // Revert
+      updateItemInState(listId, item);
+      toast.error("Couldn't update quantity.");
+    } finally {
+      setItemBusy(item.id, false);
     }
   }
 
-  // ---- send dialog helpers ----
+  async function handleRemoveItem(listId: number, item: ListItem) {
+    if (updatingItemIds.has(item.id)) return;
+    setItemBusy(item.id, true);
+    removeItemFromState(listId, item.id);
+    try {
+      await removeListItem(listId, item.id);
+    } catch {
+      // Revert
+      setLists((prev) =>
+        prev.map((l) =>
+          l.id === listId ? { ...l, items: [...l.items, item].sort((a, b) => a.position - b.position) } : l
+        )
+      );
+      toast.error("Couldn't remove item.");
+    } finally {
+      setItemBusy(item.id, false);
+    }
+  }
+
+  // ── Send dialog ──────────────────────────────────────────────────────────
 
   function openSendDialog(list: WatchList) {
     setActiveSendList(list);
@@ -280,7 +200,6 @@ export default function ListsSection() {
       if (next.has(id)) {
         next.delete(id);
       } else {
-        // Registered: inbox on by default; unregistered: whatsapp only
         next.set(id, isRegistered ? { inbox: true, whatsapp: false } : { inbox: false, whatsapp: true });
       }
       return next;
@@ -298,7 +217,6 @@ export default function ListsSection() {
 
   async function handleSend() {
     if (!activeSendList) return;
-
     const recipientInputs: Array<{ label: string; payload: SendRecipient }> = [];
     for (const [id, channels] of contactChannels.entries()) {
       const contact = contacts.find((c) => c.id === id);
@@ -313,34 +231,24 @@ export default function ListsSection() {
         payload: { phone: rawPhone.trim(), to_inbox: false, to_whatsapp: true },
       });
     }
-
     if (recipientInputs.length === 0) {
       toast.error("Pick at least one recipient.");
       return;
     }
-
     setSending(true);
     try {
-      const results = await sendList(
-        activeSendList.id,
-        recipientInputs.map((r) => r.payload)
-      );
-
+      const results = await sendList(activeSendList.id, recipientInputs.map((r) => r.payload));
       const mapped: SendResult[] = results.map((r, i) => ({
         label: recipientInputs[i]?.label ?? `Recipient ${i + 1}`,
         waLink: r.wa_link,
         deliveredToInbox: r.deliver_to_inbox,
       }));
       setSendResults(mapped);
-
+      // Mark list as sent
+      setLists((prev) => prev.map((l) => (l.id === activeSendList.id ? { ...l, has_been_sent: true } : l)));
       const externals = mapped.filter((r) => r.waLink !== null);
-      if (externals.length === 1 && externals[0].waLink) {
-        window.open(externals[0].waLink, "_blank");
-      }
-
-      toast.success(
-        `Sent to ${results.length} recipient${results.length === 1 ? "" : "s"}`
-      );
+      if (externals.length === 1 && externals[0].waLink) window.open(externals[0].waLink, "_blank");
+      toast.success(`Sent to ${results.length} recipient${results.length === 1 ? "" : "s"}`);
     } catch {
       toast.error("Send failed. Try again.");
     } finally {
@@ -348,343 +256,178 @@ export default function ListsSection() {
     }
   }
 
-  // ---- render ----
+  async function handleShareQuoteWa(sendId: number) {
+    try {
+      const link = await getQuoteWaLink(sendId);
+      window.open(link, "_blank");
+    } catch {
+      toast.error("Couldn't get WhatsApp link.");
+    }
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────
 
   return (
     <>
-      {/* Index view */}
-      {view === "index" && (
-        <div className="px-4 py-6 mx-auto w-full max-w-[32rem] space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Lists</h2>
-            <Button size="sm" onClick={() => setView("builder")}>
-              <Plus className="size-4 mr-1" />
-              New list
-            </Button>
-          </div>
-
-          <Card>
-            <CardContent className="pt-4">
-              {listsLoading ? (
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  Loading…
-                </p>
-              ) : lists.length === 0 ? (
-                <div className="flex flex-col items-center gap-3 py-10">
-                  <div className="flex items-center justify-center size-16 rounded-2xl bg-muted">
-                    <ListChecks className="size-7 text-primary/60" />
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    No lists yet. Create one above.
-                  </p>
-                </div>
-              ) : (
-                <ul className="divide-y">
-                  {lists.map((list) => {
-                    const quotes = quotesMap.get(list.id) ?? [];
-                    return (
-                      <li key={list.id} className="py-3">
-                        <div className="flex items-center gap-3 min-h-[52px]">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">
-                              {list.title}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {list.items.length} item
-                              {list.items.length === 1 ? "" : "s"}
-                            </p>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => openSendDialog(list)}
-                          >
-                            <Send className="size-3 mr-1" />
-                            Send
-                          </Button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteList(list.id)}
-                            className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
-                            aria-label="Delete list"
-                          >
-                            <Trash2 className="size-4" />
-                          </button>
-                        </div>
-                        {quotes.length > 0 && (
-                          <div className="mt-1 space-y-1.5 border-t border-border/40 pt-2">
-                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                              Quotes
-                            </p>
-                            {quotes.map((q) => (
-                              <div
-                                key={q.send_id}
-                                className="flex items-center justify-between gap-2 rounded-md bg-muted/50 px-3 py-2"
-                              >
-                                <div className="min-w-0">
-                                  <p className="text-sm font-medium truncate">
-                                    {q.supplier_name ?? "Supplier"}
-                                  </p>
-                                  {q.total_cents > 0 && (
-                                    <p className="text-xs text-muted-foreground">
-                                      Total: ${centsToDollars(q.total_cents)}
-                                    </p>
-                                  )}
-                                </div>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => handleShareQuoteWa(q.send_id)}
-                                  className="h-8 text-xs shrink-0 text-green-400 hover:text-green-300 hover:bg-green-500/10"
-                                >
-                                  Share via WhatsApp
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </CardContent>
-          </Card>
+      <div className="px-4 py-6 mx-auto w-full max-w-[32rem] space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Lists</h2>
+          <Button size="sm" onClick={handleNewList} disabled={creating}>
+            <Plus className="size-4 mr-1" />
+            {creating ? "Creating…" : "New list"}
+          </Button>
         </div>
-      )}
 
-      {/* Builder view */}
-      {view === "builder" && (
-        <div className="px-4 py-6 mx-auto w-full max-w-[32rem] space-y-4">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                resetBuilder();
-                setView("index");
-              }}
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              ← Back
-            </button>
-            <h2 className="text-xl font-semibold">New list</h2>
+        {listsLoading ? (
+          <p className="text-sm text-muted-foreground text-center py-8">Loading…</p>
+        ) : lists.length === 0 ? (
+          <div className="flex flex-col items-center gap-4 py-16 text-center">
+            <div className="flex items-center justify-center size-16 rounded-2xl bg-muted">
+              <ListChecks className="size-7 text-primary/60" />
+            </div>
+            <p className="text-sm text-muted-foreground max-w-[220px]">
+              No lists yet. Create one above, then add items from the Search tab.
+            </p>
           </div>
-
-          <Card>
-            <CardContent className="pt-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="list-title">Title (optional — we'll name it by date)</Label>
-                <Input
-                  id="list-title"
-                  placeholder="e.g. Weekly restock"
-                  value={draftTitle}
-                  onChange={(e) => setDraftTitle(e.target.value)}
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Running low section */}
-          {lowProducts.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Flag className="size-4 text-amber-400" />
-                  Running low
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div className="flex flex-wrap gap-2">
-                  {lowProducts.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => addLowProductToDraft(p)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-sm text-amber-300 hover:bg-amber-500/20 transition-colors"
-                    >
-                      <span>{p.name}</span>
-                      <Plus className="size-3" />
-                    </button>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Item adder */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Add items</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="item-search">Search or type</Label>
-                <Input
-                  id="item-search"
-                  placeholder="iPhone case, screen protector, …"
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  disabled={isItemSelected}
-                  autoComplete="off"
-                />
-              </div>
-
-              {showSuggestions && (
-                <div className="rounded-lg border divide-y overflow-hidden">
-                  {suggestions.map((p) => (
-                    <div key={p.id} className="flex items-center min-h-[44px]">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedProduct(p);
-                          setCustomText(null);
-                          setSuggestions([]);
-                        }}
-                        className="flex-1 flex items-center justify-between gap-3 px-3 py-3 text-sm text-left hover:bg-muted transition-colors"
-                      >
-                        <span className="truncate">{p.name}</span>
-                        <Badge
-                          variant="secondary"
-                          className="shrink-0 capitalize text-xs"
+        ) : (
+          <div className="space-y-3">
+            {lists.map((list) => {
+              const quotes = quotesMap.get(list.id) ?? [];
+              return (
+                <Card key={list.id}>
+                  <CardHeader className="pb-2 pt-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <CardTitle className="text-base leading-snug truncate">
+                          {list.title}
+                        </CardTitle>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {list.items.length} item{list.items.length === 1 ? "" : "s"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {list.has_been_sent && (
+                          <Badge variant="secondary" className="text-xs">Sent</Badge>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openSendDialog(list)}
+                          className="h-7 px-2 text-xs"
                         >
-                          {p.category.replace("_", " ")}
-                        </Badge>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); toggleLowFlag(p); }}
-                        className={cn(
-                          "shrink-0 px-3 py-3 transition-colors",
-                          p.is_low
-                            ? "text-amber-400 hover:text-amber-300"
-                            : "text-muted-foreground hover:text-amber-400"
-                        )}
-                        aria-label={p.is_low ? "Unmark running low" : "Mark running low"}
-                        title={p.is_low ? "Running low — click to clear" : "Mark running low"}
-                      >
-                        <Flag className="size-3.5" />
-                      </button>
+                          <Send className="size-3 mr-1" />
+                          Send
+                        </Button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteList(list.id)}
+                          className="text-muted-foreground hover:text-destructive transition-colors p-1"
+                          aria-label="Delete list"
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      </div>
                     </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCustomText(searchInput.trim());
-                      setSelectedProduct(null);
-                      setSuggestions([]);
-                    }}
-                    className="w-full flex items-center px-3 py-3 text-sm text-left hover:bg-muted transition-colors text-muted-foreground min-h-[44px]"
-                  >
-                    + Add as new: &ldquo;{searchInput.trim()}&rdquo;
-                  </button>
-                </div>
-              )}
+                  </CardHeader>
 
-              {isItemSelected && (
-                <div className="flex items-center justify-between rounded-lg bg-muted px-3 py-2.5 text-sm">
-                  <span className="text-muted-foreground">
-                    Selected:{" "}
-                    <span className="text-foreground font-medium">
-                      {selectedProduct?.name ?? customText}
-                    </span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={clearItemSelection}
-                    className="ml-2 shrink-0 text-muted-foreground hover:text-foreground transition-colors"
-                    aria-label="Clear selection"
-                  >
-                    <X className="size-4" />
-                  </button>
-                </div>
-              )}
+                  {list.items.length > 0 && (
+                    <CardContent className="pt-0 pb-3">
+                      <ul className="divide-y">
+                        {list.items.map((item) => {
+                          const displayName = item.product_name ?? item.custom_product_name ?? "Item";
+                          const busy = updatingItemIds.has(item.id);
+                          return (
+                            <li key={item.id} className="flex items-center gap-2 py-2 min-h-[44px]">
+                              <span className="flex-1 text-sm truncate">{displayName}</span>
+                              {/* Qty stepper */}
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  disabled={busy || item.quantity <= 1}
+                                  onClick={() => handleQtyChange(list.id, item, -1)}
+                                  className="flex items-center justify-center size-6 rounded border border-input text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 transition-colors"
+                                  aria-label="Decrease quantity"
+                                >
+                                  <Minus className="size-3" />
+                                </button>
+                                <span className="w-7 text-center text-sm tabular-nums select-none">
+                                  {item.quantity}
+                                </span>
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => handleQtyChange(list.id, item, 1)}
+                                  className="flex items-center justify-center size-6 rounded border border-input text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 transition-colors"
+                                  aria-label="Increase quantity"
+                                >
+                                  <Plus className="size-3" />
+                                </button>
+                              </div>
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => handleRemoveItem(list.id, item)}
+                                className="text-muted-foreground hover:text-destructive transition-colors p-1 disabled:opacity-40"
+                                aria-label={`Remove ${displayName}`}
+                              >
+                                <X className="size-3.5" />
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </CardContent>
+                  )}
 
-              <div className="flex items-center justify-center gap-6">
-                <button
-                  type="button"
-                  onClick={() => setItemQty((q) => Math.max(1, q - 1))}
-                  className="flex items-center justify-center h-11 w-11 rounded-lg border border-input hover:bg-muted transition-colors"
-                  aria-label="Decrease quantity"
-                >
-                  <Minus className="size-4" />
-                </button>
-                <span className="text-3xl font-semibold w-12 text-center tabular-nums select-none">
-                  {itemQty}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setItemQty((q) => q + 1)}
-                  className="flex items-center justify-center h-11 w-11 rounded-lg border border-input hover:bg-muted transition-colors"
-                  aria-label="Increase quantity"
-                >
-                  <Plus className="size-4" />
-                </button>
-              </div>
-
-              <Button
-                className="w-full h-11"
-                disabled={!isItemSelected}
-                onClick={addItemToDraft}
-              >
-                Add to list
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* Draft items */}
-          {draftItems.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  Items ({draftItems.length})
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="divide-y">
-                  {draftItems.map((item) => (
-                    <li
-                      key={item.key}
-                      className="flex items-center gap-3 py-2.5 min-h-[44px]"
-                    >
-                      <span className="flex-1 text-sm">
-                        {item.quantity}× {item.displayName}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => removeDraftItem(item.key)}
-                        className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
-                        aria-label={`Remove ${item.displayName}`}
-                      >
-                        <X className="size-4" />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                <Button
-                  className="w-full mt-4"
-                  disabled={saving}
-                  onClick={handleSaveList}
-                >
-                  {saving ? "Saving…" : "Save list"}
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      )}
+                  {quotes.length > 0 && (
+                    <CardContent className="pt-0 pb-3 border-t">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mt-2 mb-1.5">
+                        Quotes
+                      </p>
+                      <div className="space-y-1.5">
+                        {quotes.map((q) => (
+                          <div
+                            key={q.send_id}
+                            className="flex items-center justify-between gap-2 rounded-md bg-muted/50 px-3 py-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">
+                                {q.supplier_name ?? "Supplier"}
+                              </p>
+                              {q.total_cents > 0 && (
+                                <p className="text-xs text-muted-foreground">
+                                  Total: ${centsToDollars(q.total_cents)}
+                                </p>
+                              )}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleShareQuoteWa(q.send_id)}
+                              className="h-8 text-xs shrink-0 text-green-400 hover:text-green-300 hover:bg-green-500/10"
+                            >
+                              Share via WhatsApp
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Send dialog */}
       <Dialog
         open={activeSendList !== null}
-        onOpenChange={(open) => {
-          if (!open) closeSendDialog();
-        }}
+        onOpenChange={(open) => { if (!open) closeSendDialog(); }}
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>
-              Send &ldquo;{activeSendList?.title}&rdquo;
-            </DialogTitle>
+            <DialogTitle>Send &ldquo;{activeSendList?.title}&rdquo;</DialogTitle>
           </DialogHeader>
 
           {sendResults !== null ? (
@@ -692,16 +435,11 @@ export default function ListsSection() {
               <p className="text-sm font-medium">Results</p>
               <ul className="space-y-0 divide-y">
                 {sendResults.map((r, i) => (
-                  <li
-                    key={i}
-                    className="flex items-center justify-between gap-3 py-2.5"
-                  >
+                  <li key={i} className="flex items-center justify-between gap-3 py-2.5">
                     <span className="text-sm truncate flex-1">{r.label}</span>
                     <div className="flex flex-col items-end gap-0.5 shrink-0">
                       {r.deliveredToInbox && (
-                        <span className="text-xs text-muted-foreground">
-                          Delivered to inbox
-                        </span>
+                        <span className="text-xs text-muted-foreground">Delivered to inbox</span>
                       )}
                       {r.waLink && (
                         <a
@@ -724,9 +462,7 @@ export default function ListsSection() {
           ) : (
             <div className="space-y-4">
               {contactsLoading ? (
-                <p className="text-sm text-muted-foreground">
-                  Loading contacts…
-                </p>
+                <p className="text-sm text-muted-foreground">Loading contacts…</p>
               ) : contacts.length > 0 ? (
                 <div>
                   <p className="text-sm font-medium mb-2">Contacts</p>
@@ -748,9 +484,7 @@ export default function ListsSection() {
                               className="flex-1 text-sm cursor-pointer select-none"
                             >
                               <span className="font-medium">{c.nickname}</span>
-                              <span className="text-muted-foreground ml-2 text-xs">
-                                {c.phone}
-                              </span>
+                              <span className="text-muted-foreground ml-2 text-xs">{c.phone}</span>
                             </label>
                           </div>
                           {selected && (
@@ -774,9 +508,7 @@ export default function ListsSection() {
                                   </button>
                                 </>
                               ) : (
-                                <span className="text-muted-foreground">
-                                  WhatsApp only · not on app
-                                </span>
+                                <span className="text-muted-foreground">WhatsApp only · not on app</span>
                               )}
                             </div>
                           )}
@@ -801,21 +533,14 @@ export default function ListsSection() {
                   onChange={(e) => setRawPhone(e.target.value)}
                 />
                 {rawPhone.trim() && (
-                  <p className="text-xs text-muted-foreground">
-                    WhatsApp only — unregistered number
-                  </p>
+                  <p className="text-xs text-muted-foreground">WhatsApp only — unregistered number</p>
                 )}
               </div>
 
               <DialogFooter>
-                <Button variant="outline" onClick={closeSendDialog}>
-                  Cancel
-                </Button>
+                <Button variant="outline" onClick={closeSendDialog}>Cancel</Button>
                 <Button
-                  disabled={
-                    sending ||
-                    (contactChannels.size === 0 && !rawPhone.trim())
-                  }
+                  disabled={sending || (contactChannels.size === 0 && !rawPhone.trim())}
                   onClick={handleSend}
                 >
                   {sending ? "Sending…" : "Send"}

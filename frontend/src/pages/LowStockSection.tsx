@@ -55,7 +55,7 @@ export default function LowStockSection() {
         <div className="space-y-1.5">
           <p className="text-lg font-semibold">Nothing flagged low</p>
           <p className="text-sm text-muted-foreground max-w-[240px]">
-            Flag products as running low from the list builder's product search.
+            Flag products as running low from the Search tab.
           </p>
         </div>
       </div>
