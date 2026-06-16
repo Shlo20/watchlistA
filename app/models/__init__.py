@@ -6,6 +6,7 @@ from app.models.contact import Contact
 from app.models.list import List, ListItem
 from app.models.send import Send, SendItemState
 from app.models.verification import PhoneVerification
+from app.models.low_stock_flag import LowStockFlag
 
 __all__ = [
     "User",
@@ -15,4 +16,5 @@ __all__ = [
     "List", "ListItem",
     "Send", "SendItemState",
     "PhoneVerification",
+    "LowStockFlag",
 ]

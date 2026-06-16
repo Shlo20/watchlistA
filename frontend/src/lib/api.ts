@@ -29,6 +29,7 @@ export interface Product {
   sku?: string;
   default_unit_cost?: number | null;
   created_at: string;
+  is_low?: boolean;
 }
 
 export type RequestStatus = "pending" | "done";
@@ -345,6 +346,22 @@ export function dollarsToCents(value: string): number | null {
   const n = parseFloat(value);
   if (isNaN(n) || n < 0) return null;
   return Math.round(n * 100);
+}
+
+// ---- Low stock flags ----
+
+export async function getLowProducts(): Promise<Product[]> {
+  const { data } = await api.get<Product[]>("/products/low");
+  return data;
+}
+
+export async function flagLow(productId: number): Promise<Product> {
+  const { data } = await api.post<Product>(`/products/${productId}/low`);
+  return data;
+}
+
+export async function unflagLow(productId: number): Promise<void> {
+  await api.delete(`/products/${productId}/low`);
 }
 
 // ---- Profile ----

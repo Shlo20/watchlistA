@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.core.deps import get_current_user
 from app.models.list import List, ListItem
+from app.models.low_stock_flag import LowStockFlag
 from app.models.send import Send, SendItemState
 from app.models.user import User
 from app.schemas.send import (
@@ -81,6 +82,15 @@ def mark_all_received(
         state.checked = True
         if state.list_item_id in item_qty:
             state.received_quantity = item_qty[state.list_item_id]
+
+    # Auto-unflag low-stock for all catalog products on this list (for the list owner)
+    if lst:
+        product_ids = [item.product_id for item in lst.items if item.product_id]
+        if product_ids:
+            db.query(LowStockFlag).filter(
+                LowStockFlag.user_id == lst.owner_user_id,
+                LowStockFlag.product_id.in_(product_ids),
+            ).delete(synchronize_session=False)
 
     db.commit()
     send = _load_send_full(db, send_id)
@@ -159,6 +169,15 @@ def check_off_item(
         state.received_quantity = payload.received_quantity
     if "unit_price_cents" in payload.model_fields_set:
         state.unit_price_cents = payload.unit_price_cents
+
+    # Auto-unflag when a catalog item is marked received (for the list owner)
+    if payload.checked is True and lst:
+        list_item = db.query(ListItem).filter(ListItem.id == list_item_id).first()
+        if list_item and list_item.product_id:
+            db.query(LowStockFlag).filter(
+                LowStockFlag.user_id == lst.owner_user_id,
+                LowStockFlag.product_id == list_item.product_id,
+            ).delete(synchronize_session=False)
 
     db.commit()
     db.refresh(state)

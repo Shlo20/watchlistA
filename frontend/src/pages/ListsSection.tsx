@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Minus, Plus, X, Send, Trash2, ListChecks } from "lucide-react";
+import { Minus, Plus, X, Send, Trash2, ListChecks, Flag } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,9 @@ import {
   sendList,
   listContacts,
   searchProducts,
+  getLowProducts,
+  flagLow,
+  unflagLow,
   getListQuotes,
   getQuoteWaLink,
   centsToDollars,
@@ -65,6 +68,9 @@ export default function ListsSection() {
   const [customText, setCustomText] = useState<string | null>(null);
   const [itemQty, setItemQty] = useState(1);
   const [saving, setSaving] = useState(false);
+
+  // Low-stock state
+  const [lowProducts, setLowProducts] = useState<Product[]>([]);
 
   // Send dialog state
   const [activeSendList, setActiveSendList] = useState<WatchList | null>(null);
@@ -115,6 +121,13 @@ export default function ListsSection() {
       .catch(() => toast.error("Couldn't load contacts."))
       .finally(() => setContactsLoading(false));
   }, [activeSendList]);
+
+  // ---- load low products when entering builder ----
+
+  useEffect(() => {
+    if (view !== "builder") return;
+    getLowProducts().then(setLowProducts).catch(() => {});
+  }, [view]);
 
   // ---- debounced product search ----
 
@@ -208,6 +221,30 @@ export default function ListsSection() {
       toast.success("List deleted");
     } catch {
       toast.error("Couldn't delete. Try again.");
+    }
+  }
+
+  function addLowProductToDraft(product: Product) {
+    const key = `${Date.now()}-${Math.random()}`;
+    setDraftItems((prev) => [...prev, {
+      key,
+      product_id: product.id,
+      quantity: 1,
+      displayName: product.name,
+    }]);
+  }
+
+  async function toggleLowFlag(product: Product) {
+    if (product.is_low) {
+      await unflagLow(product.id).catch(() => {});
+      setLowProducts((prev) => prev.filter((p) => p.id !== product.id));
+      setSuggestions((prev) => prev.map((p) => p.id === product.id ? { ...p, is_low: false } : p));
+    } else {
+      const updated = await flagLow(product.id).catch(() => null);
+      if (updated) {
+        setLowProducts((prev) => prev.some((p) => p.id === product.id) ? prev : [...prev, updated]);
+        setSuggestions((prev) => prev.map((p) => p.id === product.id ? { ...p, is_low: true } : p));
+      }
     }
   }
 
@@ -447,6 +484,33 @@ export default function ListsSection() {
             </CardContent>
           </Card>
 
+          {/* Running low section */}
+          {lowProducts.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Flag className="size-4 text-amber-400" />
+                  Running low
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="flex flex-wrap gap-2">
+                  {lowProducts.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => addLowProductToDraft(p)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-sm text-amber-300 hover:bg-amber-500/20 transition-colors"
+                    >
+                      <span>{p.name}</span>
+                      <Plus className="size-3" />
+                    </button>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Item adder */}
           <Card>
             <CardHeader>
@@ -468,24 +532,39 @@ export default function ListsSection() {
               {showSuggestions && (
                 <div className="rounded-lg border divide-y overflow-hidden">
                   {suggestions.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedProduct(p);
-                        setCustomText(null);
-                        setSuggestions([]);
-                      }}
-                      className="w-full flex items-center justify-between gap-3 px-3 py-3 text-sm text-left hover:bg-muted transition-colors min-h-[44px]"
-                    >
-                      <span className="truncate">{p.name}</span>
-                      <Badge
-                        variant="secondary"
-                        className="shrink-0 capitalize text-xs"
+                    <div key={p.id} className="flex items-center min-h-[44px]">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedProduct(p);
+                          setCustomText(null);
+                          setSuggestions([]);
+                        }}
+                        className="flex-1 flex items-center justify-between gap-3 px-3 py-3 text-sm text-left hover:bg-muted transition-colors"
                       >
-                        {p.category.replace("_", " ")}
-                      </Badge>
-                    </button>
+                        <span className="truncate">{p.name}</span>
+                        <Badge
+                          variant="secondary"
+                          className="shrink-0 capitalize text-xs"
+                        >
+                          {p.category.replace("_", " ")}
+                        </Badge>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); toggleLowFlag(p); }}
+                        className={cn(
+                          "shrink-0 px-3 py-3 transition-colors",
+                          p.is_low
+                            ? "text-amber-400 hover:text-amber-300"
+                            : "text-muted-foreground hover:text-amber-400"
+                        )}
+                        aria-label={p.is_low ? "Unmark running low" : "Mark running low"}
+                        title={p.is_low ? "Running low — click to clear" : "Mark running low"}
+                      >
+                        <Flag className="size-3.5" />
+                      </button>
+                    </div>
                   ))}
                   <button
                     type="button"

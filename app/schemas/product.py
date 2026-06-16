@@ -23,3 +23,4 @@ class ProductOut(BaseModel):
     model: str | None
     is_active: bool
     created_at: datetime
+    is_low: bool = False

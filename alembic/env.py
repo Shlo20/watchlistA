@@ -15,6 +15,7 @@ from app.models.contact import Contact  # noqa
 from app.models.list import List, ListItem  # noqa
 from app.models.send import Send, SendItemState  # noqa
 from app.models.verification import PhoneVerification  # noqa
+from app.models.low_stock_flag import LowStockFlag  # noqa
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
