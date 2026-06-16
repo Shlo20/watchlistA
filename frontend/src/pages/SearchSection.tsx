@@ -4,7 +4,7 @@ import { Search, Flag, Plus, ChevronDown, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   searchProducts,
   createProduct,
@@ -19,9 +19,9 @@ import {
 
 const LAST_LIST_KEY = "watchlist_last_list_id";
 
-function defaultListTitle(): string {
+function autoListTitle(): string {
   const d = new Date();
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   return `Restock — ${months[d.getMonth()]} ${d.getDate()}`;
 }
 
@@ -29,29 +29,22 @@ export default function SearchSection() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Product[]>([]);
   const [lists, setLists] = useState<WatchList[]>([]);
-  const [targetListId, setTargetListId] = useState<number | null>(() => {
+  const [defaultListId, setDefaultListId] = useState<number | null>(() => {
     const saved = localStorage.getItem(LAST_LIST_KEY);
     return saved ? Number(saved) : null;
   });
 
-  // Dropdown state
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [newListMode, setNewListMode] = useState(false);
-  const [newListTitle, setNewListTitle] = useState("");
-  const [savingNewList, setSavingNewList] = useState(false);
+  // Per-row list picker
+  const [openPickerProductId, setOpenPickerProductId] = useState<number | null>(null);
+  const [pickerBusy, setPickerBusy] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
 
-  // Add-item loading state
+  // Loading states
   const [addingProductIds, setAddingProductIds] = useState<Set<number>>(new Set());
-  const [addingCustom, setAddingCustom] = useState(false);
-  const [addingCatalog, setAddingCatalog] = useState(false);
-
-  const selectorRef = useRef<HTMLDivElement>(null);
-  const newListInputRef = useRef<HTMLInputElement>(null);
+  const [newItemBusy, setNewItemBusy] = useState<"idle" | "low" | "list" | "only">("idle");
 
   useEffect(() => {
-    listLists()
-      .then(setLists)
-      .catch(() => {});
+    listLists().then(setLists).catch(() => {});
   }, []);
 
   // Debounced search
@@ -66,92 +59,69 @@ export default function SearchSection() {
     return () => clearTimeout(timer);
   }, [query]);
 
-  // Close picker on outside click — creates nothing
+  // Close per-row picker on outside click
   useEffect(() => {
-    if (!pickerOpen) return;
+    if (!openPickerProductId) return;
     function onMouseDown(e: MouseEvent) {
-      if (selectorRef.current && !selectorRef.current.contains(e.target as Node)) {
-        closeDropdown();
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setOpenPickerProductId(null);
       }
     }
     document.addEventListener("mousedown", onMouseDown);
     return () => document.removeEventListener("mousedown", onMouseDown);
-  }, [pickerOpen]);
+  }, [openPickerProductId]);
 
-  // Drop saved target if it no longer exists
+  // Keep defaultListId valid when lists change
   useEffect(() => {
-    if (targetListId !== null && lists.length > 0 && !lists.find((l) => l.id === targetListId)) {
-      setTargetListId(null);
-      localStorage.removeItem(LAST_LIST_KEY);
+    if (defaultListId === null || lists.length === 0) return;
+    if (!lists.find((l) => l.id === defaultListId)) {
+      const fallback = lists[0]?.id ?? null;
+      setDefaultListId(fallback);
+      if (fallback) localStorage.setItem(LAST_LIST_KEY, String(fallback));
+      else localStorage.removeItem(LAST_LIST_KEY);
     }
-  }, [lists, targetListId]);
+  }, [lists, defaultListId]);
 
-  // Focus the new-list input when it appears
-  useEffect(() => {
-    if (newListMode) {
-      setTimeout(() => newListInputRef.current?.focus(), 0);
-    }
-  }, [newListMode]);
+  const defaultList = lists.find((l) => l.id === defaultListId) ?? lists[0] ?? null;
 
-  const targetList = lists.find((l) => l.id === targetListId) ?? null;
-
-  function closeDropdown() {
-    setPickerOpen(false);
-    setNewListMode(false);
-    setNewListTitle("");
-  }
-
-  function selectList(list: WatchList) {
-    setTargetListId(list.id);
+  function rememberList(list: WatchList) {
+    setDefaultListId(list.id);
     localStorage.setItem(LAST_LIST_KEY, String(list.id));
-    closeDropdown();
   }
 
-  function openNewListMode() {
-    setNewListTitle(defaultListTitle());
-    setNewListMode(true);
-  }
-
-  function cancelNewList() {
-    // Go back to the list picker view; do NOT close the dropdown
-    setNewListMode(false);
-    setNewListTitle("");
-  }
-
-  async function confirmNewList() {
-    if (savingNewList) return;
-    setSavingNewList(true);
+  async function resolveList(): Promise<WatchList | null> {
+    if (defaultList) return defaultList;
+    // No list yet — create one (deliberate consequence of an explicit add action)
     try {
-      const title = newListTitle.trim() || defaultListTitle();
-      const created = await createList({ title, items: [] });
+      const created = await createList({ title: autoListTitle(), items: [] });
       setLists((prev) => [created, ...prev]);
-      setTargetListId(created.id);
-      localStorage.setItem(LAST_LIST_KEY, String(created.id));
-      closeDropdown();
+      rememberList(created);
+      return created;
     } catch {
-      toast.error("Couldn't create list. Try again.");
-    } finally {
-      setSavingNewList(false);
+      toast.error("Couldn't create a list. Try again.");
+      return null;
     }
   }
 
-  // Returns the target list if one is selected, otherwise opens the picker and returns null.
-  // Never creates anything silently.
-  function resolveTarget(): WatchList | null {
-    if (targetList) return targetList;
-    setPickerOpen(true);
-    return null;
+  async function refreshSearch() {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    const fresh = await searchProducts(trimmed).catch(() => null);
+    if (fresh) setResults(fresh.slice(0, 8));
   }
 
-  async function handleAddProduct(product: Product) {
+  // ── Catalog row: main Add ────────────────────────────────────────────────
+
+  async function handleAddToDefault(product: Product) {
     if (addingProductIds.has(product.id)) return;
-    const list = resolveTarget();
+    const list = await resolveList();
     if (!list) return;
     setAddingProductIds((prev) => new Set(prev).add(product.id));
     try {
       await addListItem(list.id, { product_id: product.id, quantity: 1 });
+      rememberList(list);
       if (list.has_been_sent) {
-        toast.warning(`Added to "${list.title}" — this list was already sent`);
+        toast.warning(`Added to "${list.title}" — list was already sent`);
       } else {
         toast.success(`Added to "${list.title}"`);
       }
@@ -162,49 +132,47 @@ export default function SearchSection() {
     }
   }
 
-  async function handleAddCustom() {
-    const name = query.trim();
-    if (!name || addingCustom) return;
-    const list = resolveTarget();
-    if (!list) return;
-    setAddingCustom(true);
+  // ── Catalog row: picker selection ────────────────────────────────────────
+
+  async function handlePickerSelectList(product: Product, list: WatchList) {
+    setOpenPickerProductId(null);
+    rememberList(list);
+    if (addingProductIds.has(product.id)) return;
+    setAddingProductIds((prev) => new Set(prev).add(product.id));
     try {
-      await addListItem(list.id, { custom_product_name: name, quantity: 1 });
+      await addListItem(list.id, { product_id: product.id, quantity: 1 });
       if (list.has_been_sent) {
-        toast.warning(`Added "${name}" to "${list.title}" — this list was already sent`);
+        toast.warning(`Added to "${list.title}" — list was already sent`);
       } else {
-        toast.success(`Added "${name}" to "${list.title}"`);
+        toast.success(`Added to "${list.title}"`);
       }
     } catch {
       toast.error("Couldn't add item. Try again.");
     } finally {
-      setAddingCustom(false);
+      setAddingProductIds((prev) => { const s = new Set(prev); s.delete(product.id); return s; });
     }
   }
 
-  async function handleAddToCatalog() {
-    const name = query.trim();
-    if (!name || addingCatalog) return;
-    const list = resolveTarget();
-    if (!list) return;
-    setAddingCatalog(true);
+  async function handlePickerNewList(product: Product) {
+    if (pickerBusy) return;
+    setOpenPickerProductId(null);
+    setPickerBusy(true);
     try {
-      const newProduct = await createProduct({ name });
-      await addListItem(list.id, { product_id: newProduct.id, quantity: 1 });
-      if (list.has_been_sent) {
-        toast.warning(`Added "${name}" to catalog and "${list.title}" — list was already sent`);
-      } else {
-        toast.success(`Added "${name}" to catalog and "${list.title}"`);
-      }
-      // Refresh results so the new product appears as a real catalog item with flag toggle
-      const fresh = await searchProducts(name);
-      setResults(fresh.slice(0, 8));
+      const created = await createList({ title: autoListTitle(), items: [] });
+      setLists((prev) => [created, ...prev]);
+      rememberList(created);
+      setAddingProductIds((prev) => new Set(prev).add(product.id));
+      await addListItem(created.id, { product_id: product.id, quantity: 1 });
+      toast.success(`Added to "${created.title}"`);
     } catch {
-      toast.error("Couldn't add to catalog. Try again.");
+      toast.error("Couldn't create list. Try again.");
     } finally {
-      setAddingCatalog(false);
+      setPickerBusy(false);
+      setAddingProductIds((prev) => { const s = new Set(prev); s.delete(product.id); return s; });
     }
   }
+
+  // ── Flag toggle ──────────────────────────────────────────────────────────
 
   async function toggleFlag(product: Product) {
     if (product.is_low) {
@@ -219,221 +187,304 @@ export default function SearchSection() {
     }
   }
 
+  // ── "Not in catalog" card actions ────────────────────────────────────────
+
+  async function handleCatalogLow() {
+    const name = query.trim();
+    if (!name || newItemBusy !== "idle") return;
+    setNewItemBusy("low");
+    try {
+      const product = await createProduct({ name });
+      await flagLow(product.id);
+      toast.success(`Added "${name}" to catalog, marked low`);
+      await refreshSearch();
+    } catch {
+      toast.error("Couldn't save. Try again.");
+    } finally {
+      setNewItemBusy("idle");
+    }
+  }
+
+  async function handleCatalogAndList() {
+    const name = query.trim();
+    if (!name || newItemBusy !== "idle") return;
+    setNewItemBusy("list");
+    try {
+      // Resolve list inline so busy state is set before any await
+      let list = defaultList;
+      if (!list) {
+        if (lists.length > 0) {
+          list = lists[0];
+          rememberList(list);
+        } else {
+          const created = await createList({ title: autoListTitle(), items: [] });
+          setLists((prev) => [created, ...prev]);
+          rememberList(created);
+          list = created;
+        }
+      }
+      const product = await createProduct({ name });
+      await addListItem(list.id, { product_id: product.id, quantity: 1 });
+      if (list.has_been_sent) {
+        toast.warning(`Added "${name}" to catalog and "${list.title}" — list was already sent`);
+      } else {
+        toast.success(`Added "${name}" to catalog and "${list.title}"`);
+      }
+      await refreshSearch();
+    } catch {
+      toast.error("Couldn't save. Try again.");
+    } finally {
+      setNewItemBusy("idle");
+    }
+  }
+
+  async function handleCatalogOnly() {
+    const name = query.trim();
+    if (!name || newItemBusy !== "idle") return;
+    setNewItemBusy("only");
+    try {
+      await createProduct({ name });
+      toast.success(`Added "${name}" to catalog`);
+      await refreshSearch();
+    } catch {
+      toast.error("Couldn't save. Try again.");
+    } finally {
+      setNewItemBusy("idle");
+    }
+  }
+
   const hasQuery = query.trim().length > 0;
 
   return (
-    <div className="px-4 py-6 mx-auto w-full max-w-[32rem] space-y-4">
-      <h2 className="text-xl font-semibold">Search products</h2>
+    <div className="px-4 py-6 mx-auto w-full max-w-[32rem] space-y-5">
+      <h2 className="text-xl font-semibold">Search</h2>
 
-      {/* ── Target list selector ── */}
-      <div ref={selectorRef} className="relative">
-        <button
-          type="button"
-          onClick={() => (pickerOpen ? closeDropdown() : setPickerOpen(true))}
-          className={cn(
-            "w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-sm transition-colors text-left",
-            pickerOpen
-              ? "border-primary bg-primary/5"
-              : "border-border bg-card hover:border-muted-foreground/60"
-          )}
-        >
-          <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
-            {targetList ? (
-              <>
-                <span className="text-xs text-muted-foreground shrink-0">Adding to</span>
-                <span className="font-medium truncate">{targetList.title}</span>
-                {targetList.has_been_sent && (
-                  <Badge variant="secondary" className="text-xs shrink-0">Sent</Badge>
-                )}
-              </>
-            ) : (
-              <span className="text-muted-foreground">Select a list to add items to…</span>
-            )}
-          </div>
-          <ChevronDown
-            className={cn(
-              "size-4 text-muted-foreground shrink-0 transition-transform duration-150",
-              pickerOpen && "rotate-180"
-            )}
-          />
-        </button>
-
-        {pickerOpen && (
-          <div className="absolute top-full mt-1.5 left-0 right-0 z-30 rounded-xl border bg-popover shadow-lg overflow-hidden">
-            {newListMode ? (
-              /* ── Inline new-list naming form ── */
-              <div className="p-3 space-y-2">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  Name your list
-                </p>
-                <Input
-                  ref={newListInputRef}
-                  value={newListTitle}
-                  onChange={(e) => setNewListTitle(e.target.value)}
-                  placeholder={defaultListTitle()}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") { e.preventDefault(); confirmNewList(); }
-                    if (e.key === "Escape") { e.preventDefault(); cancelNewList(); }
-                  }}
-                  className="h-9 text-sm"
-                />
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    className="flex-1 h-8"
-                    disabled={savingNewList}
-                    onClick={confirmNewList}
-                  >
-                    {savingNewList ? "Creating…" : "Confirm"}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 px-3"
-                    disabled={savingNewList}
-                    onClick={cancelNewList}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              /* ── List picker ── */
-              <>
-                {lists.length > 0 && (
-                  <ul className="divide-y max-h-52 overflow-y-auto">
-                    {lists.map((l) => {
-                      const active = l.id === targetListId;
-                      return (
-                        <li key={l.id}>
-                          <button
-                            type="button"
-                            onClick={() => selectList(l)}
-                            className={cn(
-                              "w-full flex items-center gap-3 px-4 py-3 text-sm text-left hover:bg-muted transition-colors",
-                              active && "bg-primary/8 text-primary font-medium"
-                            )}
-                          >
-                            <Check className={cn("size-3.5 shrink-0", active ? "opacity-100" : "opacity-0")} />
-                            <span className="flex-1 truncate">{l.title}</span>
-                            {l.has_been_sent && (
-                              <Badge variant="secondary" className="text-xs shrink-0">Sent</Badge>
-                            )}
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-                <button
-                  type="button"
-                  onClick={openNewListMode}
-                  className={cn(
-                    "w-full flex items-center gap-2 px-4 py-3 text-sm text-left text-primary hover:bg-muted transition-colors",
-                    lists.length > 0 && "border-t"
-                  )}
-                >
-                  <Plus className="size-3.5 shrink-0" />
-                  New list
-                </button>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* ── Search input ── */}
+      {/* Search box — only thing above results */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
         <Input
           className="pl-9"
-          placeholder="Search by name, SKU, category…"
+          placeholder="Search products…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           autoFocus
         />
       </div>
 
-      {/* ── Results ── */}
-      {hasQuery && (
-        <div className="rounded-xl border divide-y overflow-hidden">
-          {results.map((product) => (
-            <div key={product.id} className="flex items-center gap-3 px-4 py-3.5 min-h-[56px]">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{product.name}</p>
-                <Badge variant="secondary" className="capitalize text-xs mt-0.5">
-                  {product.category.replace("_", " ")}
-                </Badge>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => toggleFlag(product)}
-                className={cn(
-                  "shrink-0 p-1.5 rounded transition-colors",
-                  product.is_low
-                    ? "text-amber-400 hover:text-amber-300"
-                    : "text-muted-foreground hover:text-amber-400"
-                )}
-                aria-label={product.is_low ? "Unmark running low" : "Mark running low"}
-                title={product.is_low ? "Running low — click to clear" : "Mark running low"}
-              >
-                <Flag className="size-3.5" />
-              </button>
-
-              <button
-                type="button"
-                disabled={addingProductIds.has(product.id)}
-                onClick={() => handleAddProduct(product)}
-                className="shrink-0 flex items-center justify-center size-8 rounded-lg border border-input text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 transition-colors"
-                aria-label={`Add ${product.name}`}
-              >
-                <Plus className="size-4" />
-              </button>
-            </div>
-          ))}
-
-          {/* Custom item row — two actions */}
-          <div className="px-4 py-3 bg-muted/25 space-y-2">
-            <p className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">&ldquo;{query.trim()}&rdquo;</span>
-              {results.length === 0 ? " — not in catalog" : ""}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={addingCustom || addingCatalog}
-                onClick={handleAddCustom}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-input text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 transition-colors"
-              >
-                <Plus className="size-3 shrink-0" />
-                {addingCustom ? "Adding…" : "Add to list"}
-                <span className="opacity-50">· one-off</span>
-              </button>
-              <button
-                type="button"
-                disabled={addingCatalog || addingCustom}
-                onClick={handleAddToCatalog}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-primary/40 text-xs text-primary hover:bg-primary/10 disabled:opacity-40 transition-colors"
-              >
-                <Plus className="size-3 shrink-0" />
-                {addingCatalog ? "Saving…" : "Add to catalog"}
-                <span className="opacity-60">· save to stock</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Empty state */}
       {!hasQuery && (
-        <div className="flex flex-col items-center justify-center py-12 gap-4 text-center">
+        <div className="flex flex-col items-center justify-center py-14 gap-4 text-center">
           <div className="flex items-center justify-center size-16 rounded-2xl bg-muted">
             <Search className="size-7 text-primary/60" />
           </div>
-          <p className="text-sm text-muted-foreground max-w-[220px]">
-            Search for products to add to a list or flag as running low.
+          <p className="text-sm text-muted-foreground max-w-[200px]">
+            Search the catalog to add items to a list or flag them as running low.
           </p>
+        </div>
+      )}
+
+      {hasQuery && (
+        <div className="space-y-5">
+
+          {/* ── Section: In your catalog ── */}
+          {results.length > 0 && (
+            <section className="space-y-1.5">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-0.5">
+                In your catalog
+              </p>
+              <div className="rounded-xl border divide-y overflow-visible">
+                {results.map((product) => (
+                  <div key={product.id} className="relative flex items-center gap-2 px-4 py-3.5 min-h-[56px]">
+                    {/* Name + low badge */}
+                    <div className="flex-1 min-w-0 flex items-center gap-1.5 flex-wrap">
+                      <span className="text-sm font-medium">{product.name}</span>
+                      {product.is_low && (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] px-1.5 py-px border-amber-500/40 text-amber-400 shrink-0"
+                        >
+                          low
+                        </Badge>
+                      )}
+                    </div>
+
+                    {/* Flag toggle — quiet when not low */}
+                    <button
+                      type="button"
+                      onClick={() => toggleFlag(product)}
+                      className={cn(
+                        "shrink-0 p-1.5 rounded transition-colors",
+                        product.is_low
+                          ? "text-amber-400 hover:text-amber-300"
+                          : "text-muted-foreground/35 hover:text-amber-400"
+                      )}
+                      aria-label={product.is_low ? "Unmark running low" : "Mark running low"}
+                    >
+                      <Flag className="size-3.5" />
+                    </button>
+
+                    {/* Add split button */}
+                    <div className="flex items-stretch shrink-0">
+                      <button
+                        type="button"
+                        disabled={addingProductIds.has(product.id) || pickerBusy}
+                        onClick={() => handleAddToDefault(product)}
+                        className="flex items-center gap-1 pl-2.5 pr-2 h-8 rounded-l-lg border border-input text-xs text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 transition-colors"
+                      >
+                        <Plus className="size-3.5 shrink-0" />
+                        Add
+                      </button>
+                      <button
+                        type="button"
+                        disabled={addingProductIds.has(product.id) || pickerBusy}
+                        onClick={() =>
+                          setOpenPickerProductId(
+                            openPickerProductId === product.id ? null : product.id
+                          )
+                        }
+                        className="flex items-center justify-center w-6 h-8 rounded-r-lg border border-l-0 border-input text-muted-foreground/50 hover:text-foreground hover:bg-muted disabled:opacity-40 transition-colors"
+                        aria-label="Choose list"
+                      >
+                        <ChevronDown
+                          className={cn(
+                            "size-3 transition-transform duration-150",
+                            openPickerProductId === product.id && "rotate-180"
+                          )}
+                        />
+                      </button>
+                    </div>
+
+                    {/* Per-row list picker */}
+                    {openPickerProductId === product.id && (
+                      <div
+                        ref={pickerRef}
+                        className="absolute right-0 top-full mt-1.5 z-30 w-56 rounded-xl border bg-popover shadow-lg overflow-hidden"
+                      >
+                        {lists.length > 0 && (
+                          <ul className="divide-y max-h-48 overflow-y-auto">
+                            {lists.map((l) => {
+                              const isDefault = l.id === defaultList?.id;
+                              return (
+                                <li key={l.id}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePickerSelectList(product, l)}
+                                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-left hover:bg-muted transition-colors"
+                                  >
+                                    <Check
+                                      className={cn(
+                                        "size-3.5 shrink-0 text-primary transition-opacity",
+                                        isDefault ? "opacity-100" : "opacity-0"
+                                      )}
+                                    />
+                                    <span className={cn("flex-1 truncate", isDefault && "font-medium")}>
+                                      {l.title}
+                                    </span>
+                                    {l.has_been_sent && (
+                                      <Badge variant="secondary" className="text-xs shrink-0">
+                                        Sent
+                                      </Badge>
+                                    )}
+                                  </button>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                        <button
+                          type="button"
+                          disabled={pickerBusy}
+                          onClick={() => handlePickerNewList(product)}
+                          className={cn(
+                            "w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-left text-primary hover:bg-muted transition-colors disabled:opacity-50",
+                            lists.length > 0 && "border-t"
+                          )}
+                        >
+                          <Plus className="size-3.5 shrink-0" />
+                          {pickerBusy ? "Creating…" : "New list"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* ── Section: Not in catalog yet ── */}
+          <section className="space-y-1.5">
+            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-0.5">
+              Not in catalog yet
+            </p>
+            <Card>
+              <CardContent className="pt-4 pb-3 space-y-3">
+                <p className="text-sm font-medium truncate">
+                  &ldquo;{query.trim()}&rdquo;
+                </p>
+                <div className="space-y-2">
+                  {/* Action 1: Catalog + mark low — amber/warning, most prominent */}
+                  <button
+                    type="button"
+                    disabled={newItemBusy !== "idle"}
+                    onClick={handleCatalogLow}
+                    className="w-full flex items-center gap-3 px-3.5 py-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-left hover:bg-amber-500/15 disabled:opacity-50 transition-colors"
+                  >
+                    <Flag className="size-4 text-amber-400 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-amber-300 leading-tight">
+                        {newItemBusy === "low" ? "Saving…" : "Catalog + mark low"}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Add to stock catalog and flag running low
+                      </p>
+                    </div>
+                  </button>
+
+                  {/* Action 2: Catalog + add to list — primary */}
+                  <button
+                    type="button"
+                    disabled={newItemBusy !== "idle"}
+                    onClick={handleCatalogAndList}
+                    className="w-full flex items-center gap-3 px-3.5 py-3 rounded-xl bg-primary/8 border border-primary/25 text-left hover:bg-primary/12 disabled:opacity-50 transition-colors"
+                  >
+                    <Plus className="size-4 text-primary shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-primary leading-tight">
+                        {newItemBusy === "list" ? "Saving…" : "Catalog + add to list"}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Save to catalog and add to{" "}
+                        {defaultList ? (
+                          <span className="text-foreground/70">&ldquo;{defaultList.title}&rdquo;</span>
+                        ) : (
+                          "a list"
+                        )}
+                      </p>
+                    </div>
+                  </button>
+
+                  {/* Action 3: Catalog only — muted */}
+                  <button
+                    type="button"
+                    disabled={newItemBusy !== "idle"}
+                    onClick={handleCatalogOnly}
+                    className="w-full flex items-center gap-3 px-3.5 py-3 rounded-xl border border-border text-left hover:bg-muted disabled:opacity-50 transition-colors"
+                  >
+                    <Plus className="size-4 text-muted-foreground shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground leading-tight">
+                        {newItemBusy === "only" ? "Saving…" : "Add to catalog"}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Save to stock catalog only — no list, no flag
+                      </p>
+                    </div>
+                  </button>
+                </div>
+              </CardContent>
+            </Card>
+          </section>
+
         </div>
       )}
     </div>
