@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ListChecks, Search, Users, Inbox, LogOut, Settings, Flag } from "lucide-react";
+import { ListChecks, Search, Users, Inbox, LogOut, Settings, Flag, Package } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import ContactsSection from "@/pages/ContactsSection";
 import ListsSection from "@/pages/ListsSection";
@@ -8,11 +8,12 @@ import SearchSection from "@/pages/SearchSection";
 import InboxSection from "@/pages/InboxSection";
 import SettingsSection from "@/pages/SettingsSection";
 import LowStockSection from "@/pages/LowStockSection";
+import CatalogSection from "@/pages/CatalogSection";
 import MoreSection from "@/pages/MoreSection";
 
-type Section = "lists" | "search" | "contacts" | "inbox" | "low" | "settings";
+type Section = "lists" | "search" | "contacts" | "inbox" | "low" | "settings" | "catalog";
 
-// Desktop sidebar — all 6 sections
+// Desktop sidebar — all sections
 const SIDEBAR_ITEMS: {
   id: Section;
   label: string;
@@ -23,6 +24,7 @@ const SIDEBAR_ITEMS: {
   { id: "contacts", label: "People", icon: Users },
   { id: "inbox", label: "Inbox", icon: Inbox },
   { id: "low", label: "Low", icon: Flag },
+  { id: "catalog", label: "Catalog", icon: Package },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 
@@ -56,7 +58,7 @@ export default function HomePage() {
   }
 
   const mobileActiveId =
-    mobileMore || active === "contacts" || active === "settings"
+    mobileMore || active === "contacts" || active === "settings" || active === "catalog"
       ? "more"
       : active;
 
@@ -113,6 +115,7 @@ export default function HomePage() {
           {active === "inbox" && !mobileMore && <InboxSection />}
           {active === "low" && !mobileMore && <LowStockSection />}
           {active === "settings" && !mobileMore && <SettingsSection />}
+          {active === "catalog" && !mobileMore && <CatalogSection />}
           {mobileMore && (
             <MoreSection
               onNavigate={(section) => {

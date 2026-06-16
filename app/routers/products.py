@@ -1,5 +1,5 @@
 """Product catalog routes."""
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -26,7 +26,7 @@ def _to_out(product: Product, low_ids: set[int]) -> ProductOut:
     return out
 
 
-# ── /products/low must come BEFORE /products/{product_id} ──────────────────
+# ── literal sub-paths must come BEFORE /{product_id} ──────────────────────
 
 @router.get("/low", response_model=list[ProductOut])
 def list_low_products(
@@ -44,6 +44,22 @@ def list_low_products(
         return []
     products = db.query(Product).filter(Product.id.in_(product_ids)).order_by(Product.name).all()
     return [_to_out(p, set(product_ids)) for p in products]
+
+
+@router.get("/all", response_model=list[ProductOut])
+def list_all_products(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Return all active catalog products for the catalog management screen."""
+    products = (
+        db.query(Product)
+        .filter(Product.is_active.is_(True))
+        .order_by(Product.name)
+        .all()
+    )
+    low_ids = _flagged_ids(user, db)
+    return [_to_out(p, low_ids) for p in products]
 
 
 @router.post("/{product_id}/low", response_model=ProductOut, status_code=status.HTTP_200_OK)
@@ -84,6 +100,23 @@ def unflag_low(
     db.commit()
 
 
+@router.post("/{product_id}/restore", response_model=ProductOut, status_code=status.HTTP_200_OK)
+def restore_product(
+    product_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Restore a soft-deleted product (sets is_active=True)."""
+    product = db.query(Product).filter(Product.id == product_id).first()
+    if not product:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Product not found")
+    product.is_active = True
+    db.commit()
+    db.refresh(product)
+    low_ids = _flagged_ids(user, db)
+    return _to_out(product, low_ids)
+
+
 # ── standard catalog routes ─────────────────────────────────────────────────
 
 @router.get("", response_model=list[ProductOut])
@@ -93,7 +126,7 @@ def list_products(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Anyone authenticated can browse the catalog."""
+    """Anyone authenticated can browse the active catalog."""
     q = db.query(Product).filter(Product.is_active.is_(True))
     if category:
         q = q.filter(Product.category == category)
@@ -111,15 +144,34 @@ def list_products(
 @router.post("", response_model=ProductOut, status_code=status.HTTP_201_CREATED)
 def create_product(
     payload: ProductCreate,
+    response: Response,
     db: Session = Depends(get_db),
-    _user=Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
-    """Any authenticated user can add new SKUs to the catalog."""
+    """Create a catalog product — idempotent by name (case-insensitive, trimmed).
+
+    Returns existing product (200) if name matches, reactivates it if soft-deleted,
+    or creates a new one (201).
+    """
+    name_norm = payload.name.strip().lower()
+    existing = db.query(Product).filter(
+        func.lower(func.trim(Product.name)) == name_norm
+    ).first()
+    if existing:
+        if not existing.is_active:
+            existing.is_active = True
+            db.commit()
+            db.refresh(existing)
+        response.status_code = status.HTTP_200_OK
+        low_ids = _flagged_ids(user, db)
+        return _to_out(existing, low_ids)
+
     product = Product(**payload.model_dump())
     db.add(product)
     db.commit()
     db.refresh(product)
-    return product
+    low_ids = _flagged_ids(user, db)
+    return _to_out(product, low_ids)
 
 
 @router.get("/{product_id}", response_model=ProductOut)
@@ -133,3 +185,20 @@ def get_product(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Product not found")
     low_ids = _flagged_ids(user, db)
     return _to_out(product, low_ids)
+
+
+@router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_product(
+    product_id: int,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """Soft-delete a product (sets is_active=False; preserves the row for referential integrity)."""
+    product = db.query(Product).filter(
+        Product.id == product_id,
+        Product.is_active.is_(True),
+    ).first()
+    if not product:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Product not found")
+    product.is_active = False
+    db.commit()

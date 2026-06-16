@@ -254,6 +254,11 @@ export default function SearchSection() {
   }
 
   const hasQuery = query.trim().length > 0;
+  const exactMatchExists =
+    hasQuery &&
+    results.some(
+      (p) => p.name.trim().toLowerCase() === query.trim().toLowerCase()
+    );
 
   return (
     <div className="px-4 py-6 mx-auto w-full max-w-[32rem] space-y-5">
@@ -411,79 +416,86 @@ export default function SearchSection() {
             </section>
           )}
 
-          {/* ── Section: Not in catalog yet ── */}
-          <section className="space-y-1.5">
-            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-0.5">
-              Not in catalog yet
+          {/* ── Section: Not in catalog yet / exact-match note ── */}
+          {exactMatchExists ? (
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground px-0.5 pt-1">
+              <Check className="size-3.5 text-primary shrink-0" />
+              Already in your catalog — use the item above to flag it or add it to a list.
             </p>
-            <Card>
-              <CardContent className="pt-4 pb-3 space-y-3">
-                <p className="text-sm font-medium truncate">
-                  &ldquo;{query.trim()}&rdquo;
-                </p>
-                <div className="space-y-2">
-                  {/* Action 1: Catalog + mark low — amber/warning, most prominent */}
-                  <button
-                    type="button"
-                    disabled={newItemBusy !== "idle"}
-                    onClick={handleCatalogLow}
-                    className="w-full flex items-center gap-3 px-3.5 py-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-left hover:bg-amber-500/15 disabled:opacity-50 transition-colors"
-                  >
-                    <Flag className="size-4 text-amber-400 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-amber-300 leading-tight">
-                        {newItemBusy === "low" ? "Saving…" : "Catalog + mark low"}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Add to stock catalog and flag running low
-                      </p>
-                    </div>
-                  </button>
+          ) : (
+            <section className="space-y-1.5">
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-0.5">
+                Not in catalog yet
+              </p>
+              <Card>
+                <CardContent className="pt-4 pb-3 space-y-3">
+                  <p className="text-sm font-medium truncate">
+                    &ldquo;{query.trim()}&rdquo;
+                  </p>
+                  <div className="space-y-2">
+                    {/* Action 1: Catalog + mark low — amber/warning, most prominent */}
+                    <button
+                      type="button"
+                      disabled={newItemBusy !== "idle"}
+                      onClick={handleCatalogLow}
+                      className="w-full flex items-center gap-3 px-3.5 py-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-left hover:bg-amber-500/15 disabled:opacity-50 transition-colors"
+                    >
+                      <Flag className="size-4 text-amber-400 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-amber-300 leading-tight">
+                          {newItemBusy === "low" ? "Saving…" : "Catalog + mark low"}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Add to stock catalog and flag running low
+                        </p>
+                      </div>
+                    </button>
 
-                  {/* Action 2: Catalog + add to list — primary */}
-                  <button
-                    type="button"
-                    disabled={newItemBusy !== "idle"}
-                    onClick={handleCatalogAndList}
-                    className="w-full flex items-center gap-3 px-3.5 py-3 rounded-xl bg-primary/8 border border-primary/25 text-left hover:bg-primary/12 disabled:opacity-50 transition-colors"
-                  >
-                    <Plus className="size-4 text-primary shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-primary leading-tight">
-                        {newItemBusy === "list" ? "Saving…" : "Catalog + add to list"}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Save to catalog and add to{" "}
-                        {defaultList ? (
-                          <span className="text-foreground/70">&ldquo;{defaultList.title}&rdquo;</span>
-                        ) : (
-                          "a list"
-                        )}
-                      </p>
-                    </div>
-                  </button>
+                    {/* Action 2: Catalog + add to list — primary */}
+                    <button
+                      type="button"
+                      disabled={newItemBusy !== "idle"}
+                      onClick={handleCatalogAndList}
+                      className="w-full flex items-center gap-3 px-3.5 py-3 rounded-xl bg-primary/8 border border-primary/25 text-left hover:bg-primary/12 disabled:opacity-50 transition-colors"
+                    >
+                      <Plus className="size-4 text-primary shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-primary leading-tight">
+                          {newItemBusy === "list" ? "Saving…" : "Catalog + add to list"}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Save to catalog and add to{" "}
+                          {defaultList ? (
+                            <span className="text-foreground/70">&ldquo;{defaultList.title}&rdquo;</span>
+                          ) : (
+                            "a list"
+                          )}
+                        </p>
+                      </div>
+                    </button>
 
-                  {/* Action 3: Catalog only — muted */}
-                  <button
-                    type="button"
-                    disabled={newItemBusy !== "idle"}
-                    onClick={handleCatalogOnly}
-                    className="w-full flex items-center gap-3 px-3.5 py-3 rounded-xl border border-border text-left hover:bg-muted disabled:opacity-50 transition-colors"
-                  >
-                    <Plus className="size-4 text-muted-foreground shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-foreground leading-tight">
-                        {newItemBusy === "only" ? "Saving…" : "Add to catalog"}
-                      </p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Save to stock catalog only — no list, no flag
-                      </p>
-                    </div>
-                  </button>
-                </div>
-              </CardContent>
-            </Card>
-          </section>
+                    {/* Action 3: Catalog only — muted */}
+                    <button
+                      type="button"
+                      disabled={newItemBusy !== "idle"}
+                      onClick={handleCatalogOnly}
+                      className="w-full flex items-center gap-3 px-3.5 py-3 rounded-xl border border-border text-left hover:bg-muted disabled:opacity-50 transition-colors"
+                    >
+                      <Plus className="size-4 text-muted-foreground shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground leading-tight">
+                          {newItemBusy === "only" ? "Saving…" : "Add to catalog"}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Save to stock catalog only — no list, no flag
+                        </p>
+                      </div>
+                    </button>
+                  </div>
+                </CardContent>
+              </Card>
+            </section>
+          )}
 
         </div>
       )}

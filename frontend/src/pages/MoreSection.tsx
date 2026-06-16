@@ -1,13 +1,29 @@
-import { Users, Settings, ChevronRight } from "lucide-react";
+import { Users, Settings, Package, ChevronRight } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 
 interface Props {
-  onNavigate: (section: "contacts" | "settings") => void;
+  onNavigate: (section: "contacts" | "settings" | "catalog") => void;
 }
 
 const ITEMS = [
-  { id: "contacts" as const, label: "People", description: "Manage contacts", icon: Users },
-  { id: "settings" as const, label: "Settings", description: "Profile & preferences", icon: Settings },
+  {
+    id: "catalog" as const,
+    label: "Catalog",
+    description: "Browse and manage your stock catalog",
+    icon: Package,
+  },
+  {
+    id: "contacts" as const,
+    label: "People",
+    description: "Manage contacts",
+    icon: Users,
+  },
+  {
+    id: "settings" as const,
+    label: "Settings",
+    description: "Profile & preferences",
+    icon: Settings,
+  },
 ];
 
 export default function MoreSection({ onNavigate }: Props) {

@@ -386,6 +386,20 @@ export async function getLowProducts(): Promise<Product[]> {
   return data;
 }
 
+export async function getAllProducts(): Promise<Product[]> {
+  const { data } = await api.get<Product[]>("/products/all");
+  return data;
+}
+
+export async function deleteProduct(productId: number): Promise<void> {
+  await api.delete(`/products/${productId}`);
+}
+
+export async function restoreProduct(productId: number): Promise<Product> {
+  const { data } = await api.post<Product>(`/products/${productId}/restore`);
+  return data;
+}
+
 export async function flagLow(productId: number): Promise<Product> {
   const { data } = await api.post<Product>(`/products/${productId}/low`);
   return data;
