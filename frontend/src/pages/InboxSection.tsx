@@ -341,7 +341,11 @@ export default function InboxSection() {
                           {send.list_title ?? "Restock list"}
                         </CardTitle>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          {send.sender_name ? `From ${send.sender_name}` : "Received list"}
+                          {send.sender_business_name
+                            ? `From ${send.sender_business_name}`
+                            : send.sender_name
+                              ? `From ${send.sender_name}`
+                              : "Received list"}
                         </p>
                       </div>
                       <div className="flex items-center gap-1 shrink-0 mt-0.5">

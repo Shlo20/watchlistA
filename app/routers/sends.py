@@ -213,5 +213,5 @@ def get_quote_wa_link(
     target_phone = send.sender.phone if is_recipient else send.recipient_phone
 
     price_map = {s.list_item_id: s.unit_price_cents for s in send.item_states}
-    body = format_priced_body(lst, lst.items if lst else [], price_map)
+    body = format_priced_body(lst, lst.items if lst else [], price_map, business_name=user.business_name or None)
     return QuoteWaLinkOut(wa_link=build_wa_link(target_phone, body))

@@ -34,9 +34,14 @@ export default function HomePage() {
     <div className="min-h-screen bg-background">
       {/* Header — glass card surface, blurs content behind on scroll */}
       <header className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-border/60 bg-card/95 backdrop-blur-sm">
-        <span className="text-base font-bold tracking-tight text-foreground">
-          Watch<span className="text-primary">list</span>
-        </span>
+        <div className="flex flex-col leading-tight">
+          <span className="text-base font-bold tracking-tight text-foreground">
+            Watch<span className="text-primary">list</span>
+          </span>
+          {user?.business_name && (
+            <span className="text-xs text-muted-foreground">{user.business_name}</span>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           <span className="hidden sm:block text-sm text-muted-foreground">{user?.name}</span>
           <button

@@ -166,7 +166,7 @@ def send_list(
         db.commit()
         db.refresh(send)
 
-        wa_link = build_wa_link(phone, format_list_body(lst, lst.items)) if do_whatsapp else None
+        wa_link = build_wa_link(phone, format_list_body(lst, lst.items, business_name=user.business_name or None)) if do_whatsapp else None
         results.append(build_send_out(send, wa_link=wa_link))
 
     return results

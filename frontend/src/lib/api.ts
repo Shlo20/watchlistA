@@ -270,6 +270,7 @@ export interface InboxSend {
   list_id: number;
   list_title: string | null;
   sender_name?: string | null;
+  sender_business_name?: string | null;
   items: InboxListItem[];
   item_states: SendItemState[];
   created_at: string;

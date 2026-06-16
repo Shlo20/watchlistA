@@ -66,6 +66,7 @@ class InboxSendOut(BaseModel):
     list_id: int
     list_title: str | None
     sender_name: str | None
+    sender_business_name: str | None = None
     items: list[InboxItemOut]
     item_states: list[SendItemStateOut]
     created_at: datetime
@@ -99,6 +100,7 @@ def build_inbox_send_out(send) -> InboxSendOut:
         list_id=send.list_id,
         list_title=lst.title if lst else None,
         sender_name=send.sender.name if send.sender else None,
+        sender_business_name=send.sender.business_name if send.sender else None,
         items=[
             InboxItemOut(
                 id=item.id,

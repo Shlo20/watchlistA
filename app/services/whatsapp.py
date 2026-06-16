@@ -12,12 +12,16 @@ def build_wa_link(phone: str, body: str) -> str:
     return f"https://wa.me/{digits}?text={quote(body, safe='')}"
 
 
-def format_list_body(lst, items) -> str:
+def format_list_body(lst, items, business_name: str | None = None) -> str:
     """Render a List and its items as a clean WhatsApp message.
 
     Title (if present) is wrapped in *bold*. Each item is one line.
+    If business_name is set, prepends "Order from {business_name}" header.
     """
     lines = []
+    if business_name:
+        lines.append(f"Order from {business_name}")
+        lines.append("")
     if lst.title:
         lines.append(f"*{lst.title}*")
     for item in items:
@@ -30,14 +34,17 @@ def format_list_body(lst, items) -> str:
     return "\n".join(lines)
 
 
-def format_priced_body(lst, items, price_map: dict) -> str:
+def format_priced_body(lst, items, price_map: dict, business_name: str | None = None) -> str:
     """Render a list with unit prices and a running total for a WhatsApp quote.
 
     price_map: {list_item_id: unit_price_cents | None}
     Items with no price are included without a price. Total line is added when
-    at least one price is set.
+    at least one price is set. If business_name is set, prepends a header line.
     """
     lines = []
+    if business_name:
+        lines.append(f"Order from {business_name}")
+        lines.append("")
     if lst and lst.title:
         lines.append(f"*{lst.title}*")
     total_cents = 0
