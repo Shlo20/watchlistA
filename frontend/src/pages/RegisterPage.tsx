@@ -35,6 +35,12 @@ export default function RegisterPage() {
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
+
+    if (password.length < 8) {
+      toast.error("Password must be at least 8 characters.");
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await registerApi({ name, phone, password, code });
@@ -42,13 +48,27 @@ export default function RegisterPage() {
       toast.success("Account created — welcome!");
       navigate("/");
     } catch (err: unknown) {
-      const status = (err as { response?: { status?: number } })?.response?.status;
-      if (status === 422) {
-        toast.error("Invalid or expired code.");
-      } else if (status === 409) {
-        toast.error("Phone number already registered.");
+      const axiosErr = err as { response?: { status?: number; data?: unknown } };
+      const httpStatus = axiosErr?.response?.status;
+      const body = axiosErr?.response?.data as { detail?: unknown } | undefined;
+
+      if (httpStatus === 422) {
+        // FastAPI validation error — surface the real message if available
+        let msg = "Please check your details — password must be at least 8 characters.";
+        const detail = body?.detail;
+        if (Array.isArray(detail) && detail.length > 0) {
+          const first = detail[0] as { msg?: string };
+          if (first.msg) msg = first.msg;
+        } else if (typeof detail === "string") {
+          msg = detail;
+        }
+        toast.error(msg);
+      } else if (httpStatus === 401) {
+        toast.error("Invalid or expired verification code.");
+      } else if (httpStatus === 409) {
+        toast.error("This phone number is already registered — try logging in.");
       } else {
-        toast.error("Registration failed. Please try again.");
+        toast.error("Couldn't create account, please try again.");
       }
     } finally {
       setLoading(false);
@@ -117,6 +137,7 @@ export default function RegisterPage() {
                   autoComplete="new-password"
                   className="h-11"
                 />
+                <p className="text-xs text-muted-foreground">At least 8 characters.</p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="code">6-digit code</Label>
@@ -132,9 +153,6 @@ export default function RegisterPage() {
                   required
                   className="h-11"
                 />
-                <p className="text-xs text-muted-foreground">
-                  Dev: use <span className="font-mono text-primary/80">000000</span>
-                </p>
               </div>
               <Button type="submit" size="lg" className="w-full mt-2" disabled={loading}>
                 {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
