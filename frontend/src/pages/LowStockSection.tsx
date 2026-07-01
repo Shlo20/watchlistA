@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { Flag, X, Plus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,6 +10,8 @@ export default function LowStockSection() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const creatingRef = useRef(false);
+  const unflaggingRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     getLowProducts()
@@ -19,12 +21,25 @@ export default function LowStockSection() {
   }, []);
 
   async function handleUnflag(product: Product) {
-    await unflagLow(product.id).catch(() => toast.error("Couldn't unflag."));
-    setProducts((prev) => prev.filter((p) => p.id !== product.id));
+    if (unflaggingRef.current.has(product.id)) return;
+    unflaggingRef.current.add(product.id);
+    try {
+      await unflagLow(product.id);
+      // Only remove from the UI once the server confirms — otherwise the item
+      // vanishes locally while still flagged on the server.
+      setProducts((prev) => prev.filter((p) => p.id !== product.id));
+    } catch {
+      toast.error("Couldn't unflag. Try again.");
+    } finally {
+      unflaggingRef.current.delete(product.id);
+    }
   }
 
   async function handleCreateRestockList() {
-    if (products.length === 0) return;
+    // Ref guard: a fast double-tap fires before the disabled state renders,
+    // which would create two identical restock lists.
+    if (products.length === 0 || creatingRef.current) return;
+    creatingRef.current = true;
     setCreating(true);
     try {
       await createList({
@@ -34,6 +49,7 @@ export default function LowStockSection() {
     } catch {
       toast.error("Couldn't create list. Try again.");
     } finally {
+      creatingRef.current = false;
       setCreating(false);
     }
   }

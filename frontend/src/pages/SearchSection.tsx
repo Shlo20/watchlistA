@@ -43,6 +43,13 @@ export default function SearchSection() {
   const [addingProductIds, setAddingProductIds] = useState<Set<number>>(new Set());
   const [newItemBusy, setNewItemBusy] = useState<"idle" | "low" | "list" | "only">("idle");
 
+  // Synchronous in-flight guards — state updates are async, so a fast double-tap
+  // can slip past a state-based check before React re-renders. Refs close that gap.
+  const addingRef = useRef<Set<number>>(new Set());
+  const pickerBusyRef = useRef(false);
+  const flagBusyRef = useRef<Set<number>>(new Set());
+  const newItemBusyRef = useRef(false);
+
   useEffect(() => {
     listLists().then(setLists).catch(() => {});
   }, []);
@@ -59,16 +66,21 @@ export default function SearchSection() {
     return () => clearTimeout(timer);
   }, [query]);
 
-  // Close per-row picker on outside click
+  // Close per-row picker on outside tap/click. Dismissing the picker is always
+  // a pure UI action — it never creates or modifies anything.
   useEffect(() => {
     if (!openPickerProductId) return;
-    function onMouseDown(e: MouseEvent) {
+    function onPointerDown(e: Event) {
       if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
         setOpenPickerProductId(null);
       }
     }
-    document.addEventListener("mousedown", onMouseDown);
-    return () => document.removeEventListener("mousedown", onMouseDown);
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("touchstart", onPointerDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("touchstart", onPointerDown);
+    };
   }, [openPickerProductId]);
 
   // Keep defaultListId valid when lists change
@@ -89,20 +101,6 @@ export default function SearchSection() {
     localStorage.setItem(LAST_LIST_KEY, String(list.id));
   }
 
-  async function resolveList(): Promise<WatchList | null> {
-    if (defaultList) return defaultList;
-    // No list yet — create one (deliberate consequence of an explicit add action)
-    try {
-      const created = await createList({ title: autoListTitle(), items: [] });
-      setLists((prev) => [created, ...prev]);
-      rememberList(created);
-      return created;
-    } catch {
-      toast.error("Couldn't create a list. Try again.");
-      return null;
-    }
-  }
-
   async function refreshSearch() {
     const trimmed = query.trim();
     if (!trimmed) return;
@@ -110,17 +108,21 @@ export default function SearchSection() {
     if (fresh) setResults(fresh.slice(0, 8));
   }
 
-  // ── Catalog row: main Add ────────────────────────────────────────────────
+  // ── Shared add-to-list helper ────────────────────────────────────────────
 
-  async function handleAddToDefault(product: Product) {
-    if (addingProductIds.has(product.id)) return;
-    const list = await resolveList();
-    if (!list) return;
+  async function addProductToList(product: Product, list: WatchList) {
+    if (addingRef.current.has(product.id)) return;
+    addingRef.current.add(product.id);
     setAddingProductIds((prev) => new Set(prev).add(product.id));
     try {
-      await addListItem(list.id, { product_id: product.id, quantity: 1 });
+      const { alreadyInList } = await addListItem(list.id, {
+        product_id: product.id,
+        quantity: 1,
+      });
       rememberList(list);
-      if (list.has_been_sent) {
+      if (alreadyInList) {
+        toast.info(`"${product.name}" is already in "${list.title}"`);
+      } else if (list.has_been_sent) {
         toast.warning(`Added to "${list.title}" — list was already sent`);
       } else {
         toast.success(`Added to "${list.title}"`);
@@ -128,46 +130,50 @@ export default function SearchSection() {
     } catch {
       toast.error("Couldn't add item. Try again.");
     } finally {
+      addingRef.current.delete(product.id);
       setAddingProductIds((prev) => { const s = new Set(prev); s.delete(product.id); return s; });
     }
+  }
+
+  // ── Catalog row: main Add ────────────────────────────────────────────────
+
+  async function handleAddToDefault(product: Product) {
+    if (!defaultList) {
+      // No lists yet — never create one implicitly. Open the picker so the
+      // user explicitly confirms "New list" (or picks nothing and dismisses).
+      setOpenPickerProductId(product.id);
+      return;
+    }
+    await addProductToList(product, defaultList);
   }
 
   // ── Catalog row: picker selection ────────────────────────────────────────
 
   async function handlePickerSelectList(product: Product, list: WatchList) {
     setOpenPickerProductId(null);
-    rememberList(list);
-    if (addingProductIds.has(product.id)) return;
-    setAddingProductIds((prev) => new Set(prev).add(product.id));
-    try {
-      await addListItem(list.id, { product_id: product.id, quantity: 1 });
-      if (list.has_been_sent) {
-        toast.warning(`Added to "${list.title}" — list was already sent`);
-      } else {
-        toast.success(`Added to "${list.title}"`);
-      }
-    } catch {
-      toast.error("Couldn't add item. Try again.");
-    } finally {
-      setAddingProductIds((prev) => { const s = new Set(prev); s.delete(product.id); return s; });
-    }
+    await addProductToList(product, list);
   }
 
   async function handlePickerNewList(product: Product) {
-    if (pickerBusy) return;
+    // Explicit "New list" tap — the only place Search creates a list.
+    if (pickerBusyRef.current || addingRef.current.has(product.id)) return;
+    pickerBusyRef.current = true;
     setOpenPickerProductId(null);
     setPickerBusy(true);
+    addingRef.current.add(product.id);
+    setAddingProductIds((prev) => new Set(prev).add(product.id));
     try {
       const created = await createList({ title: autoListTitle(), items: [] });
       setLists((prev) => [created, ...prev]);
       rememberList(created);
-      setAddingProductIds((prev) => new Set(prev).add(product.id));
       await addListItem(created.id, { product_id: product.id, quantity: 1 });
       toast.success(`Added to "${created.title}"`);
     } catch {
       toast.error("Couldn't create list. Try again.");
     } finally {
+      pickerBusyRef.current = false;
       setPickerBusy(false);
+      addingRef.current.delete(product.id);
       setAddingProductIds((prev) => { const s = new Set(prev); s.delete(product.id); return s; });
     }
   }
@@ -175,15 +181,29 @@ export default function SearchSection() {
   // ── Flag toggle ──────────────────────────────────────────────────────────
 
   async function toggleFlag(product: Product) {
-    if (product.is_low) {
-      await unflagLow(product.id).catch(() => toast.error("Couldn't unflag."));
-      setResults((prev) => prev.map((p) => p.id === product.id ? { ...p, is_low: false } : p));
-    } else {
-      const updated = await flagLow(product.id).catch(() => null);
-      if (updated) {
-        setResults((prev) => prev.map((p) => p.id === product.id ? { ...p, is_low: true } : p));
-        toast.success(`${product.name} flagged as running low`);
+    if (flagBusyRef.current.has(product.id)) return;
+    flagBusyRef.current.add(product.id);
+    try {
+      if (product.is_low) {
+        // Only update the UI once the server confirms — otherwise the flag
+        // would silently vanish locally while still set on the server.
+        try {
+          await unflagLow(product.id);
+          setResults((prev) => prev.map((p) => p.id === product.id ? { ...p, is_low: false } : p));
+        } catch {
+          toast.error("Couldn't unflag. Try again.");
+        }
+      } else {
+        try {
+          await flagLow(product.id);
+          setResults((prev) => prev.map((p) => p.id === product.id ? { ...p, is_low: true } : p));
+          toast.success(`${product.name} flagged as running low`);
+        } catch {
+          toast.error("Couldn't flag. Try again.");
+        }
       }
+    } finally {
+      flagBusyRef.current.delete(product.id);
     }
   }
 
@@ -191,7 +211,8 @@ export default function SearchSection() {
 
   async function handleCatalogLow() {
     const name = query.trim();
-    if (!name || newItemBusy !== "idle") return;
+    if (!name || newItemBusy !== "idle" || newItemBusyRef.current) return;
+    newItemBusyRef.current = true;
     setNewItemBusy("low");
     try {
       const product = await createProduct({ name });
@@ -201,31 +222,31 @@ export default function SearchSection() {
     } catch {
       toast.error("Couldn't save. Try again.");
     } finally {
+      newItemBusyRef.current = false;
       setNewItemBusy("idle");
     }
   }
 
   async function handleCatalogAndList() {
     const name = query.trim();
-    if (!name || newItemBusy !== "idle") return;
+    if (!name || newItemBusy !== "idle" || newItemBusyRef.current) return;
+    newItemBusyRef.current = true;
     setNewItemBusy("list");
     try {
-      // Resolve list inline so busy state is set before any await
+      // The button's description states exactly which list will be used — or
+      // that a new one will be created — so this is an explicit, informed action.
       let list = defaultList;
       if (!list) {
-        if (lists.length > 0) {
-          list = lists[0];
-          rememberList(list);
-        } else {
-          const created = await createList({ title: autoListTitle(), items: [] });
-          setLists((prev) => [created, ...prev]);
-          rememberList(created);
-          list = created;
-        }
+        const created = await createList({ title: autoListTitle(), items: [] });
+        setLists((prev) => [created, ...prev]);
+        rememberList(created);
+        list = created;
       }
       const product = await createProduct({ name });
-      await addListItem(list.id, { product_id: product.id, quantity: 1 });
-      if (list.has_been_sent) {
+      const { alreadyInList } = await addListItem(list.id, { product_id: product.id, quantity: 1 });
+      if (alreadyInList) {
+        toast.info(`"${product.name}" is already in "${list.title}"`);
+      } else if (list.has_been_sent) {
         toast.warning(`Added "${name}" to catalog and "${list.title}" — list was already sent`);
       } else {
         toast.success(`Added "${name}" to catalog and "${list.title}"`);
@@ -234,13 +255,15 @@ export default function SearchSection() {
     } catch {
       toast.error("Couldn't save. Try again.");
     } finally {
+      newItemBusyRef.current = false;
       setNewItemBusy("idle");
     }
   }
 
   async function handleCatalogOnly() {
     const name = query.trim();
-    if (!name || newItemBusy !== "idle") return;
+    if (!name || newItemBusy !== "idle" || newItemBusyRef.current) return;
+    newItemBusyRef.current = true;
     setNewItemBusy("only");
     try {
       await createProduct({ name });
@@ -249,6 +272,7 @@ export default function SearchSection() {
     } catch {
       toast.error("Couldn't save. Try again.");
     } finally {
+      newItemBusyRef.current = false;
       setNewItemBusy("idle");
     }
   }
@@ -464,11 +488,16 @@ export default function SearchSection() {
                           {newItemBusy === "list" ? "Saving…" : "Catalog + add to list"}
                         </p>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          Save to catalog and add to{" "}
                           {defaultList ? (
-                            <span className="text-foreground/70">&ldquo;{defaultList.title}&rdquo;</span>
+                            <>
+                              Save to catalog and add to{" "}
+                              <span className="text-foreground/70">&ldquo;{defaultList.title}&rdquo;</span>
+                            </>
                           ) : (
-                            "a list"
+                            <>
+                              Save to catalog and create list{" "}
+                              <span className="text-foreground/70">&ldquo;{autoListTitle()}&rdquo;</span>
+                            </>
                           )}
                         </p>
                       </div>

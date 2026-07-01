@@ -1,11 +1,13 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import type { User } from "@/lib/api";
+import type { TokenResponse, User } from "@/lib/api";
 import { loginApi } from "@/lib/api";
 import { saveAuth, getStoredToken, getStoredUser, clearAuth } from "@/lib/auth";
 
 interface AuthContextValue {
   user: User | null;
   login: (phone: string, password: string) => Promise<void>;
+  /** Persist a token + user pair (e.g. from registration) and mark the session authenticated. */
+  completeAuth: (response: TokenResponse) => void;
   logout: () => void;
   updateUser: (updated: User) => void;
   isAuthenticated: boolean;
@@ -28,10 +30,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("auth:logout", handleLogout);
   }, []);
 
-  async function login(phone: string, password: string) {
-    const response = await loginApi(phone, password);
+  function completeAuth(response: TokenResponse) {
     saveAuth(response.access_token, response.user);
     setUser(response.user);
+  }
+
+  async function login(phone: string, password: string) {
+    completeAuth(await loginApi(phone, password));
   }
 
   function logout() {
@@ -47,7 +52,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, login, logout, updateUser, isAuthenticated: user !== null }}
+      value={{ user, login, completeAuth, logout, updateUser, isAuthenticated: user !== null }}
     >
       {children}
     </AuthContext.Provider>

@@ -7,10 +7,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { requestCode, registerApi } from "@/lib/api";
-import { saveAuth } from "@/lib/auth";
+import { useAuth } from "@/context/AuthContext";
+
+// Map a FastAPI validation-error field to a message a person can act on.
+const FIELD_MESSAGES: Record<string, string> = {
+  password: "Password must be at least 8 characters.",
+  name: "Please enter your name.",
+  phone: "That phone number doesn't look valid.",
+  code: "Please enter the 6-digit code you received.",
+};
 
 export default function RegisterPage() {
   const navigate = useNavigate();
+  const { completeAuth } = useAuth();
 
   const [step, setStep] = useState<"phone" | "details">("phone");
   const [phone, setPhone] = useState("");
@@ -21,13 +30,19 @@ export default function RegisterPage() {
 
   async function handleRequestCode(e: React.FormEvent) {
     e.preventDefault();
+    if (loading) return;
     setLoading(true);
     try {
       await requestCode(phone);
       toast.success("Code sent — check your phone");
       setStep("details");
-    } catch {
-      toast.error("Couldn't send code. Check the phone number and try again.");
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if (status === 422) {
+        toast.error("That phone number doesn't look valid — check it and try again.");
+      } else {
+        toast.error("Couldn't send code. Check your connection and try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -35,6 +50,7 @@ export default function RegisterPage() {
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
+    if (loading) return;
 
     if (password.length < 8) {
       toast.error("Password must be at least 8 characters.");
@@ -44,7 +60,7 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       const response = await registerApi({ name, phone, password, code });
-      saveAuth(response.access_token, response.user);
+      completeAuth(response);
       toast.success("Account created — welcome!");
       navigate("/");
     } catch (err: unknown) {
@@ -53,12 +69,18 @@ export default function RegisterPage() {
       const body = axiosErr?.response?.data as { detail?: unknown } | undefined;
 
       if (httpStatus === 422) {
-        // FastAPI validation error — surface the real message if available
-        let msg = "Please check your details — password must be at least 8 characters.";
+        // FastAPI validation error — name the offending field so the message
+        // matches the real cause instead of always blaming the password.
+        let msg = "Please check your details and try again.";
         const detail = body?.detail;
         if (Array.isArray(detail) && detail.length > 0) {
-          const first = detail[0] as { msg?: string };
-          if (first.msg) msg = first.msg;
+          const first = detail[0] as { msg?: string; loc?: Array<string | number> };
+          const field = first.loc?.[first.loc.length - 1];
+          if (typeof field === "string" && FIELD_MESSAGES[field]) {
+            msg = FIELD_MESSAGES[field];
+          } else if (first.msg) {
+            msg = first.msg;
+          }
         } else if (typeof detail === "string") {
           msg = detail;
         }

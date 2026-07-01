@@ -23,8 +23,13 @@ import {
 type DateGroup = "Today" | "Yesterday" | "This Week" | "Earlier";
 
 function getDateGroup(dateStr: string): DateGroup {
-  const diffDays = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86_400_000);
-  if (diffDays === 0) return "Today";
+  // Compare local calendar days, not 24h blocks — "yesterday 11pm" is Yesterday
+  // even if it was 2 hours ago. Clock skew / timezone quirks can make a fresh
+  // send look slightly "in the future"; clamp those to Today instead of
+  // mis-filing them under This Week.
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diffDays = Math.round((startOfDay(new Date()) - startOfDay(new Date(dateStr))) / 86_400_000);
+  if (diffDays <= 0) return "Today";
   if (diffDays === 1) return "Yesterday";
   if (diffDays < 7) return "This Week";
   return "Earlier";
@@ -175,19 +180,18 @@ export default function InboxSection() {
   }
 
   async function handleSubmitQuote(send: InboxSend) {
-    const inputs = priceInputs.get(send.id) ?? new Map<number, string>();
-
-    // Save prices
-    const patches = send.items.map(async (item) => {
-      const raw = inputs.get(item.id) ?? "";
-      const cents = raw.trim() !== "" ? dollarsToCents(raw) : null;
-      if (cents !== null || raw.trim() !== "") {
-        await updateSendItem(send.id, item.id, { unit_price_cents: cents });
-      }
-    });
+    if (submittingIds.has(send.id)) return;
     setSubmittingIds((prev) => new Set(prev).add(send.id));
+    const inputs = priceInputs.get(send.id) ?? new Map<number, string>();
     try {
-      await Promise.all(patches);
+      // Save prices
+      await Promise.all(
+        send.items.map(async (item) => {
+          const raw = inputs.get(item.id) ?? "";
+          if (raw.trim() === "") return;
+          await updateSendItem(send.id, item.id, { unit_price_cents: dollarsToCents(raw) });
+        })
+      );
       const updated = await submitQuote(send.id);
       setSends((prev) => prev.map((s) => (s.id === send.id ? updated : s)));
       cancelQuoting(send.id);

@@ -26,8 +26,9 @@ export interface Product {
   id: number;
   name: string;
   category: ProductCategory;
-  sku?: string;
-  default_unit_cost?: number | null;
+  brand?: string | null;
+  model?: string | null;
+  is_active?: boolean;
   created_at: string;
   is_low?: boolean;
 }
@@ -234,12 +235,18 @@ export async function deleteList(id: number): Promise<void> {
   await api.delete(`/lists/${id}`);
 }
 
+export interface AddListItemResult {
+  item: ListItem;
+  /** true when the product was already on the list — no new row was created */
+  alreadyInList: boolean;
+}
+
 export async function addListItem(
   listId: number,
   payload: { product_id?: number; custom_product_name?: string; quantity?: number }
-): Promise<ListItem> {
-  const { data } = await api.post<ListItem>(`/lists/${listId}/items`, { quantity: 1, ...payload });
-  return data;
+): Promise<AddListItemResult> {
+  const res = await api.post<ListItem>(`/lists/${listId}/items`, { quantity: 1, ...payload });
+  return { item: res.data, alreadyInList: res.status === 200 };
 }
 
 export async function updateListItem(

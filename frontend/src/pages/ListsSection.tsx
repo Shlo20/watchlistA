@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { Minus, Plus, X, Send, Trash2, ListChecks, Pencil, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -46,6 +46,11 @@ export default function ListsSection() {
   const [lists, setLists] = useState<WatchList[]>([]);
   const [listsLoading, setListsLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const creatingRef = useRef(false);
+
+  // Delete confirmation state — deleting a list requires an explicit second tap
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null);
+  const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set());
 
   // Rename state
   const [editingListId, setEditingListId] = useState<number | null>(null);
@@ -95,6 +100,10 @@ export default function ListsSection() {
   // ── New list ─────────────────────────────────────────────────────────────
 
   async function handleNewList() {
+    // Ref guard: a fast double-tap can fire twice before React re-renders
+    // the disabled state, which would create two lists.
+    if (creatingRef.current) return;
+    creatingRef.current = true;
     setCreating(true);
     try {
       const created = await createList({ items: [] });
@@ -106,11 +115,14 @@ export default function ListsSection() {
     } catch {
       toast.error("Couldn't create list. Try again.");
     } finally {
+      creatingRef.current = false;
       setCreating(false);
     }
   }
 
   async function handleDeleteList(id: number) {
+    if (deletingIds.has(id)) return;
+    setDeletingIds((prev) => new Set(prev).add(id));
     try {
       await deleteList(id);
       setLists((prev) => prev.filter((l) => l.id !== id));
@@ -118,6 +130,9 @@ export default function ListsSection() {
       toast.success("List deleted");
     } catch {
       toast.error("Couldn't delete. Try again.");
+    } finally {
+      setConfirmingDeleteId((prev) => (prev === id ? null : prev));
+      setDeletingIds((prev) => { const s = new Set(prev); s.delete(id); return s; });
     }
   }
 
@@ -134,6 +149,7 @@ export default function ListsSection() {
   }
 
   async function confirmEdit(list: WatchList) {
+    if (savingTitleId !== null) return; // Enter + button click can both fire
     const title = editTitle.trim();
     // If blank or unchanged, just close without saving
     if (!title || title === list.title) {
@@ -255,7 +271,7 @@ export default function ListsSection() {
   }
 
   async function handleSend() {
-    if (!activeSendList) return;
+    if (!activeSendList || sending) return;
     const recipientInputs: Array<{ label: string; payload: SendRecipient }> = [];
     for (const [id, channels] of contactChannels.entries()) {
       const contact = contacts.find((c) => c.id === id);
@@ -289,8 +305,11 @@ export default function ListsSection() {
       const externals = mapped.filter((r) => r.waLink !== null);
       if (externals.length === 1 && externals[0].waLink) window.open(externals[0].waLink, "_blank");
       toast.success(`Sent to ${results.length} recipient${results.length === 1 ? "" : "s"}`);
-    } catch {
-      toast.error("Send failed. Try again.");
+    } catch (err: unknown) {
+      // Surface the backend's reason when it gives one (e.g. unregistered
+      // recipient can't receive to inbox) instead of a generic failure.
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Send failed. Try again.");
     } finally {
       setSending(false);
     }
@@ -398,31 +417,65 @@ export default function ListsSection() {
 
                       {/* Actions */}
                       {!isEditing && (
-                        <div className="flex items-center gap-2 shrink-0">
-                          {list.has_been_sent && (
-                            <Badge variant="secondary" className="text-xs">Sent</Badge>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => openSendDialog(list)}
-                            className="h-7 px-2 text-xs"
-                          >
-                            <Send className="size-3 mr-1" />
-                            Send
-                          </Button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteList(list.id)}
-                            className="text-muted-foreground hover:text-destructive transition-colors p-1"
-                            aria-label="Delete list"
-                          >
-                            <Trash2 className="size-4" />
-                          </button>
-                        </div>
+                        confirmingDeleteId === list.id ? (
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-xs text-muted-foreground">Delete?</span>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => handleDeleteList(list.id)}
+                              disabled={deletingIds.has(list.id)}
+                              className="h-7 px-2 text-xs"
+                            >
+                              {deletingIds.has(list.id) ? "Deleting…" : "Yes, delete"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setConfirmingDeleteId(null)}
+                              disabled={deletingIds.has(list.id)}
+                              className="h-7 px-2 text-xs"
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 shrink-0">
+                            {list.has_been_sent && (
+                              <Badge variant="secondary" className="text-xs">Sent</Badge>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openSendDialog(list)}
+                              disabled={list.items.length === 0}
+                              title={list.items.length === 0 ? "Add items before sending" : undefined}
+                              className="h-7 px-2 text-xs"
+                            >
+                              <Send className="size-3 mr-1" />
+                              Send
+                            </Button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmingDeleteId(list.id)}
+                              className="text-muted-foreground hover:text-destructive transition-colors p-1"
+                              aria-label="Delete list"
+                            >
+                              <Trash2 className="size-4" />
+                            </button>
+                          </div>
+                        )
                       )}
                     </div>
                   </CardHeader>
+
+                  {list.items.length === 0 && (
+                    <CardContent className="pt-0 pb-3">
+                      <p className="text-xs text-muted-foreground">
+                        Empty list — add items from the Search tab.
+                      </p>
+                    </CardContent>
+                  )}
 
                   {list.items.length > 0 && (
                     <CardContent className="pt-0 pb-3">

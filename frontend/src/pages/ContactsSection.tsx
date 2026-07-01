@@ -40,6 +40,7 @@ export default function ContactsSection() {
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
+    if (adding) return; // Enter key + button can both submit
     setAdding(true);
     try {
       const c = await createContact({
@@ -68,6 +69,7 @@ export default function ContactsSection() {
   }
 
   async function handleSaveEdit(id: number) {
+    if (saving) return;
     setSaving(true);
     try {
       const updated = await updateContact(id, {
