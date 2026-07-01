@@ -77,11 +77,16 @@ def mark_all_received(
     if not is_recipient and not is_owner:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized")
 
-    item_qty = {item.id: item.quantity for item in (lst.items if lst else [])}
-    for state in send.item_states:
+    # Items may have been added to the list after it was sent — those have no
+    # SendItemState row yet, so create them here instead of silently skipping.
+    states_by_item = {s.list_item_id: s for s in send.item_states}
+    for item in (lst.items if lst else []):
+        state = states_by_item.get(item.id)
+        if state is None:
+            state = SendItemState(send_id=send.id, list_item_id=item.id)
+            db.add(state)
         state.checked = True
-        if state.list_item_id in item_qty:
-            state.received_quantity = item_qty[state.list_item_id]
+        state.received_quantity = item.quantity
 
     # Auto-unflag low-stock for all catalog products on this list (for the list owner)
     if lst:
@@ -161,7 +166,18 @@ def check_off_item(
         .first()
     )
     if not state:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Item state not found")
+        # Items added to the list after it was sent have no state row yet;
+        # create one lazily so recipients can still check them off.
+        member = (
+            db.query(ListItem)
+            .filter(ListItem.id == list_item_id, ListItem.list_id == send.list_id)
+            .first()
+        )
+        if not member:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Item state not found")
+        state = SendItemState(send_id=send_id, list_item_id=list_item_id)
+        db.add(state)
+        db.flush()
 
     if payload.checked is not None:
         state.checked = payload.checked

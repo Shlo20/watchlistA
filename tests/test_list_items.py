@@ -70,6 +70,60 @@ def test_added_item_appears_in_list(client, manager_token):
     assert items[0]["quantity"] == 5
 
 
+# ── duplicate-add guard ──────────────────────────────────────────────────────
+
+def test_add_same_product_twice_returns_existing_item(client, manager_token):
+    """Rapid/repeated adds of the same product must not create duplicate rows."""
+    pr = client.post("/products", json={"name": "iPhone 15 Case"}, headers=auth(manager_token))
+    product_id = pr.json()["id"]
+    lid = _create_list(client, manager_token).json()["id"]
+
+    r1 = _add_item(client, manager_token, lid, product_id=product_id)
+    assert r1.status_code == 201
+    r2 = _add_item(client, manager_token, lid, product_id=product_id)
+    assert r2.status_code == 200  # existing item returned, not created
+    assert r2.json()["id"] == r1.json()["id"]
+    assert r2.json()["quantity"] == 1  # unchanged
+
+    items = client.get(f"/lists/{lid}", headers=auth(manager_token)).json()["items"]
+    assert len(items) == 1
+
+
+def test_add_same_custom_name_twice_is_case_insensitive(client, manager_token):
+    lid = _create_list(client, manager_token).json()["id"]
+    r1 = _add_item(client, manager_token, lid, custom_product_name="Widget")
+    assert r1.status_code == 201
+    r2 = _add_item(client, manager_token, lid, custom_product_name="  widget ")
+    assert r2.status_code == 200
+    assert r2.json()["id"] == r1.json()["id"]
+    items = client.get(f"/lists/{lid}", headers=auth(manager_token)).json()["items"]
+    assert len(items) == 1
+
+
+def test_add_different_products_not_deduped(client, manager_token):
+    lid = _create_list(client, manager_token).json()["id"]
+    assert _add_item(client, manager_token, lid, custom_product_name="A").status_code == 201
+    assert _add_item(client, manager_token, lid, custom_product_name="B").status_code == 201
+    items = client.get(f"/lists/{lid}", headers=auth(manager_token)).json()["items"]
+    assert len(items) == 2
+
+
+# ── empty-list send guard ────────────────────────────────────────────────────
+
+def test_send_empty_list_rejected(client, manager_token):
+    from tests.conftest import register_user
+    register_user(client, "Supplier", "5553330099")
+    lid = _create_list(client, manager_token).json()["id"]
+    r = client.post(
+        f"/lists/{lid}/send",
+        json={"recipients": [{"phone": "5553330099"}]},
+        headers=auth(manager_token),
+    )
+    assert r.status_code == 422
+    # No send recorded — list still shows as never sent
+    assert client.get(f"/lists/{lid}", headers=auth(manager_token)).json()["has_been_sent"] is False
+
+
 # ── PATCH /lists/{id}/items/{item_id} ───────────────────────────────────────
 
 def test_update_item_quantity(client, manager_token):

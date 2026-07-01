@@ -24,7 +24,8 @@ def test_request_code_then_register_succeeds(client):
         "code": "000000",
     })
     assert r2.status_code == 201
-    assert r2.json()["name"] == "Alice"
+    assert r2.json()["access_token"]
+    assert r2.json()["user"]["name"] == "Alice"
 
 
 def test_wrong_code_returns_401(client):
@@ -157,7 +158,7 @@ def test_backfill_contact_linked_after_register(client, manager_token):
         "code": "000000",
     })
     assert reg_r.status_code == 201
-    new_user_id = reg_r.json()["id"]
+    new_user_id = reg_r.json()["user"]["id"]
 
     # Verify the contact is now linked
     c_after = client.get(f"/contacts/{contact_id}", headers=auth(manager_token)).json()

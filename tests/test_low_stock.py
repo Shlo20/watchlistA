@@ -232,3 +232,18 @@ def test_auto_unflag_clears_only_owner_flag_not_others(client, manager_token, bu
     # Buyer's own flag is NOT cleared (buyer is the recipient, not the list owner)
     r = client.get("/products/low", headers=auth(buyer_token))
     assert any(x["id"] == p["id"] for x in r.json())
+
+
+def test_soft_deleted_product_hidden_from_low_list(client, manager_token):
+    """Deleting a catalog product removes it from the Low tab (flag row is kept)."""
+    p = _make_product(client, manager_token, "Discontinued Widget")
+    client.post(f"/products/{p['id']}/low", headers=auth(manager_token))
+    client.delete(f"/products/{p['id']}", headers=auth(manager_token))
+
+    r = client.get("/products/low", headers=auth(manager_token))
+    assert not any(x["id"] == p["id"] for x in r.json())
+
+    # Restoring the product brings the still-flagged item back
+    client.post(f"/products/{p['id']}/restore", headers=auth(manager_token))
+    r = client.get("/products/low", headers=auth(manager_token))
+    assert any(x["id"] == p["id"] for x in r.json())

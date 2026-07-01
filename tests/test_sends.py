@@ -428,3 +428,74 @@ def test_channel_inbox_for_unregistered_returns_422(client, manager_token):
         headers=auth(manager_token),
     )
     assert r.status_code == 422
+
+
+# ─── items added after the list was sent ─────────────────────────────────────
+
+def test_check_off_item_added_after_send(client, manager_token, buyer_token):
+    """Items appended to an already-sent list can still be checked off by the recipient."""
+    lst = _make_list(client, manager_token)
+    r = client.post(
+        f"/lists/{lst['id']}/send",
+        json={"recipients": [{"phone": "5552220001", "to_inbox": True}]},
+        headers=auth(manager_token),
+    )
+    send = r.json()[0]
+
+    # Owner adds an item after sending — no SendItemState row exists for it
+    late = client.post(
+        f"/lists/{lst['id']}/items",
+        json={"custom_product_name": "Late Addition", "quantity": 2},
+        headers=auth(manager_token),
+    ).json()
+
+    r = client.patch(
+        f"/sends/{send['id']}/items/{late['id']}",
+        json={"checked": True},
+        headers=auth(buyer_token),
+    )
+    assert r.status_code == 200
+    assert r.json()["checked"] is True
+
+
+def test_check_off_item_from_other_list_still_404(client, manager_token, buyer_token):
+    """The lazy state creation must not allow checking items of unrelated lists."""
+    lst = _make_list(client, manager_token)
+    other = _make_list(client, manager_token, title="Other")
+    r = client.post(
+        f"/lists/{lst['id']}/send",
+        json={"recipients": [{"phone": "5552220001", "to_inbox": True}]},
+        headers=auth(manager_token),
+    )
+    send = r.json()[0]
+    foreign_item_id = other["items"][0]["id"]
+
+    r = client.patch(
+        f"/sends/{send['id']}/items/{foreign_item_id}",
+        json={"checked": True},
+        headers=auth(buyer_token),
+    )
+    assert r.status_code == 404
+
+
+def test_mark_all_received_covers_items_added_after_send(client, manager_token, buyer_token):
+    lst = _make_list(client, manager_token)
+    r = client.post(
+        f"/lists/{lst['id']}/send",
+        json={"recipients": [{"phone": "5552220001", "to_inbox": True}]},
+        headers=auth(manager_token),
+    )
+    send = r.json()[0]
+
+    late = client.post(
+        f"/lists/{lst['id']}/items",
+        json={"custom_product_name": "Late Addition", "quantity": 3},
+        headers=auth(manager_token),
+    ).json()
+
+    r = client.post(f"/sends/{send['id']}/mark-all-received", headers=auth(buyer_token))
+    assert r.status_code == 200
+    states = {s["list_item_id"]: s for s in r.json()["item_states"]}
+    assert late["id"] in states
+    assert states[late["id"]]["checked"] is True
+    assert states[late["id"]]["received_quantity"] == 3

@@ -42,7 +42,12 @@ def list_low_products(
     product_ids = [f.product_id for f in flags]
     if not product_ids:
         return []
-    products = db.query(Product).filter(Product.id.in_(product_ids)).order_by(Product.name).all()
+    products = (
+        db.query(Product)
+        .filter(Product.id.in_(product_ids), Product.is_active.is_(True))
+        .order_by(Product.name)
+        .all()
+    )
     return [_to_out(p, set(product_ids)) for p in products]
 
 
@@ -153,7 +158,11 @@ def create_product(
     Returns existing product (200) if name matches, reactivates it if soft-deleted,
     or creates a new one (201).
     """
-    name_norm = payload.name.strip().lower()
+    # Collapse runs of whitespace so "iPhone  case" and "iPhone case" are one product
+    clean_name = " ".join(payload.name.split())
+    if not clean_name:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Product name cannot be blank")
+    name_norm = clean_name.lower()
     existing = db.query(Product).filter(
         func.lower(func.trim(Product.name)) == name_norm
     ).first()
@@ -166,7 +175,7 @@ def create_product(
         low_ids = _flagged_ids(user, db)
         return _to_out(existing, low_ids)
 
-    product = Product(**payload.model_dump())
+    product = Product(**{**payload.model_dump(), "name": clean_name})
     db.add(product)
     db.commit()
     db.refresh(product)

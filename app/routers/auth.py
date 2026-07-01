@@ -35,9 +35,13 @@ def request_code(payload: RequestCodePayload, db: Session = Depends(get_db)):
     return {"message": "If this number is valid, a verification code has been sent."}
 
 
-@router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+@router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 def register(payload: UserCreate, db: Session = Depends(get_db)):
-    """Step 2 of registration: verify OTP, create account, and backfill historical data."""
+    """Step 2 of registration: verify OTP, create account, and backfill historical data.
+
+    Returns a TokenResponse (like /login) so the client is authenticated immediately —
+    the frontend saves the token and lands the new user in the app without re-login.
+    """
     try:
         phone = normalize_phone(payload.phone)
     except ValueError as exc:
@@ -77,7 +81,8 @@ def register(payload: UserCreate, db: Session = Depends(get_db)):
     if synced_sends:
         logger.info("Backfilled %d send(s) for new user %d (%s)", synced_sends, user.id, phone)
 
-    return user
+    token = create_access_token(subject=str(user.id))
+    return TokenResponse(access_token=token, user=UserOut.model_validate(user))
 
 
 @router.get("/me", response_model=UserOut)

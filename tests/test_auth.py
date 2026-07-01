@@ -19,7 +19,7 @@ def test_register_normalizes_phone(client):
         "code": "000000",
     })
     assert r.status_code == 201
-    assert r.json()["phone"] == "+16467522092"
+    assert r.json()["user"]["phone"] == "+16467522092"
 
 
 def test_register_rejects_duplicate_phone(client):

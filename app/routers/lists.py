@@ -1,7 +1,7 @@
 """List CRUD, item CRUD, and send-to-recipients endpoint."""
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import exists
 from sqlalchemy.orm import Session, joinedload
 
@@ -152,10 +152,41 @@ def delete_list(
 def add_list_item(
     list_id: int,
     payload: ListItemIn,
+    response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Add an item to a list — idempotent per product / custom name.
+
+    If the list already contains the same product (or the same custom name,
+    case-insensitively), the existing item is returned with 200 instead of
+    creating a duplicate row. Guards against double-taps and repeated adds.
+    """
     lst = _get_owned_list(list_id, user, db)
+
+    existing = None
+    if payload.product_id is not None:
+        existing = next((i for i in lst.items if i.product_id == payload.product_id), None)
+    elif payload.custom_product_name:
+        wanted = payload.custom_product_name.strip().lower()
+        existing = next(
+            (
+                i for i in lst.items
+                if i.custom_product_name and i.custom_product_name.strip().lower() == wanted
+            ),
+            None,
+        )
+    if existing is not None:
+        response.status_code = status.HTTP_200_OK
+        return ListItemOut(
+            id=existing.id,
+            product_id=existing.product_id,
+            product_name=existing.product.name if existing.product else None,
+            custom_product_name=existing.custom_product_name,
+            quantity=existing.quantity,
+            position=existing.position,
+        )
+
     next_pos = max((i.position for i in lst.items), default=-1) + 1
     item = ListItem(
         list_id=lst.id,
@@ -235,6 +266,11 @@ def send_list(
 ):
     """Send a list to one or more recipients. Returns one SendOut per recipient."""
     lst = _get_owned_list(list_id, user, db)
+    if not lst.items:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Cannot send an empty list — add at least one item first",
+        )
     results: list[SendOut] = []
 
     for recipient_in in payload.recipients:

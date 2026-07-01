@@ -65,7 +65,9 @@ def register_user(client, name, phone, password="password123", carrier=None):
         payload["carrier"] = carrier
     r = client.post("/auth/register", json=payload)
     assert r.status_code == 201, f"register_user failed: {r.status_code} {r.json()}"
-    return r.json()
+    body = r.json()
+    assert body.get("access_token"), "register must return a usable token"
+    return body["user"]
 
 
 @pytest.fixture

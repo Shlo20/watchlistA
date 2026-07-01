@@ -167,3 +167,27 @@ def test_search_combined_with_category_filter(client, buyer_token):
     results = r.json()
     assert len(results) == 1
     assert results[0]["name"] == "iPhone 15 Case"
+
+
+def test_create_product_collapses_whitespace(client, buyer_token):
+    """'iPhone  15   Case' and 'iphone 15 case' are the same product."""
+    r1 = client.post(
+        "/products",
+        json={"name": "  iPhone  15   Case  "},
+        headers=auth_headers(buyer_token),
+    )
+    assert r1.status_code == 201
+    assert r1.json()["name"] == "iPhone 15 Case"
+
+    r2 = client.post(
+        "/products",
+        json={"name": "iphone 15 case"},
+        headers=auth_headers(buyer_token),
+    )
+    assert r2.status_code == 200  # existing product returned
+    assert r2.json()["id"] == r1.json()["id"]
+
+
+def test_create_product_blank_name_rejected(client, buyer_token):
+    r = client.post("/products", json={"name": "   "}, headers=auth_headers(buyer_token))
+    assert r.status_code == 422
